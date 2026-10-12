@@ -159,9 +159,13 @@ With INPUT, preserve that full input when selecting the entry."
           :function (lambda () (list :input input)))))
 
 (defun launcher--fallback-result (input)
-  "Make the core default search action for otherwise unmatched INPUT."
-  (let ((url (format launcher-fallback-search-url (url-hexify-string input))))
-    (list :id 'fallback :title (concat "Search web: " input)
+  "Make a URL-opening or default search action for unmatched INPUT.
+Open INPUT unchanged when it starts with http:// or https://, ignoring case."
+  (let* ((case-fold-search t)
+         (direct-url (string-match-p "\\`https?://" input))
+         (url (if direct-url input
+                (format launcher-fallback-search-url (url-hexify-string input)))))
+    (list :id 'fallback :title (concat (if direct-url "Open URL: " "Search web: ") input)
           :function (lambda () (browse-url url) nil))))
 
 (defun launcher--query-create (entries tools)
@@ -319,7 +323,7 @@ With DEFER, leave publishing to the caller."
       result)))
 
 (defun launcher--query-publish (session)
-  "Merge tools in order; offer core web search only when all results are empty."
+  "Merge tools in order; offer a URL or search fallback when results are empty."
   (let (results)
     (clrhash (launcher--query-session-candidates session))
     (cl-loop for tool in (launcher--query-session-tools session) for index from 0

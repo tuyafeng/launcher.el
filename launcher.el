@@ -32,7 +32,8 @@ User-specific directories can be added here."
 (defcustom launcher-fallback-search-url
   "https://www.google.com/search?q=%s"
   "URL template for unprefixed search when all tools return no candidates.
-%s will be replaced with the URL-encoded search query."
+%s will be replaced with the URL-encoded search query.
+Input starting with http:// or https:// (ignoring case) opens directly instead."
   :type 'string
   :group 'launcher)
 

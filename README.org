@@ -36,7 +36,9 @@ applications, calculator, your ~launcher-tools~, then the generated search tools
   prefix and name without querying; selecting it keeps the input unchanged.
   ~!gh emacs~ previews a GitHub search, executed on Return.
 - In general search, if all tools return no candidates, Launcher offers one default web search
-  (~launcher-fallback-search-url~).  Any tool result removes this fallback;
+  (~launcher-fallback-search-url~).  Input starting with ~http://~ or ~https://~
+  (ignoring case) instead shows ~Open URL:~ and opens the input unchanged.
+  Bare domains still use web search.  Any tool result removes this fallback;
   each engine is an ordinary prefixed tool generated from ~launcher-bangs~.
 
 Space inserts text under stock completion; custom Space bindings are kept.

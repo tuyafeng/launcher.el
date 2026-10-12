@@ -98,9 +98,30 @@
 
 (ert-deftest launcher-unmatched-input-searches ()
   (let ((launcher-fallback-search-url "https://example.com/?q=%s"))
-    (dolist (input '("some words" "!unknown"))
+    (dolist (input '("some words" "!unknown" "example.com" "example.com/path"
+                    "ftp://example.com" "see https://example.com"))
+      (should (equal (plist-get (launcher--fallback-result input) :title)
+                     (concat "Search web: " input)))
       (should (equal (plist-get (launcher-test--run input) :searched)
                      (list (concat "https://example.com/?q=" (url-hexify-string input))))))))
+
+(ert-deftest launcher-url-fallback-opens-input-unchanged ()
+  (let ((case-fold-search nil)
+        (launcher-fallback-search-url "https://search.example/?q=%s"))
+    (dolist (input '("http://example.com" "https://example.com"
+                    "HTTP://example.com" "HtTpS://example.com"
+                    "https://example.com/path?q=hello%20world&lang=中文#section"
+                    "https://"))
+      (let ((result (launcher--fallback-result input)))
+        (should (eq (plist-get result :id) 'fallback))
+        (should (equal (plist-get result :title) (concat "Open URL: " input))))
+      (should (equal (plist-get (launcher-test--run input) :searched) (list input))))))
+
+(ert-deftest launcher-bang-url-input-still-searches ()
+  (let* ((query "https://example.com/path?q=emacs#section")
+         (result (launcher-test--run (concat "!gh " query))))
+    (should (equal (plist-get result :searched)
+                   (list (concat "https://github.com/search?q=" (url-hexify-string query)))))))
 
 (ert-deftest launcher-custom-space-binding-is-preserved ()
   (should (eq #'ignore (plist-get (launcher-test--run "calc" #'ignore) :space))))
