@@ -30,7 +30,7 @@ view ownership, result navigation, and lifecycle. Read [shared decisions](README
 
 Each entry has a nonempty prefix string with no whitespace, a display name,
 query prompt, and callable accepting one query string and returning a live buffer.
-Single letters are convenient but not hardcoded; multi-character or `!d` prefixes
+Single letters are convenient but not hardcoded; multi-character prefixes such as `dict`
 work too. Document the Custom type and support named/autoloaded functions and
 lexical closures. The optional real dictionary handler is implemented in task 3;
 this task tests with credential-free fake handlers returning real Emacs buffers.
@@ -58,9 +58,10 @@ this task tests with credential-free fake handlers returning real Emacs buffers.
    host dismissal keys to mean Back.
 7. Report handler/missing-dependency/invalid-result errors in query mode; preserve
    text for correction/retry. Never turn recognized tool failures into web searches.
-8. Keep `launcher-bangs` backward compatible. Reject duplicate tool prefixes and
-   exact tool/bang prefix collisions with a clear configuration error before any
-   action. Prefixes such as `d` and `dd` are not ambiguous because of the delimiter.
+8. Configure search tools through `launcher-tools`, which replaces the former
+   `launcher-bangs` setting. Reject duplicate tool prefixes with a clear
+   configuration error before any action. Prefixes such as `d` and `dd` are not
+   ambiguous because of the delimiter.
    Unknown prefixes remain normal app/fallback input, as today.
 
 ## Plan
@@ -105,8 +106,8 @@ this task tests with credential-free fake handlers returning real Emacs buffers.
 - [x] Real result major mode, read-only content, copying/scrolling and ownership
   survive transitions. Preexisting result buffers and unrelated windows remain
   intact; delayed updates do not resurrect an obsolete view.
-- [x] Tool/bang conflicts and invalid registrations fail clearly before action;
-  existing bang/queryless/refresh/app/fallback regressions still pass.
+- [x] Duplicate tool prefixes and invalid registrations fail clearly before action;
+  existing search-tool/queryless/refresh/app/fallback regressions still pass.
 - [x] A registered tool works without available apps/Spotlight; nil tools retain
   the previous default experience. No Portal dependency or resizing calls exist.
 - [x] Both entry points support the shared router, with normal-buffer results in

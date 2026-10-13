@@ -96,7 +96,7 @@ Extend the current local launcher declaration; do not add a second competing cop
                 :function launcher-osx-dictionary-lookup))))
 ```
 
-`d` is a user choice. Changing it to `!d` or another unique key changes routing,
+`d` is a user choice. Changing it to `dict` or another unique key changes routing,
 not adapter code. Do not bind it directly to `osx-dictionary-search-input`, which
 reads another minibuffer rather than accepting the submitted query.
 
@@ -152,8 +152,8 @@ shortcuts, the Portal Hydra, or any unrelated settings.
 ```
 
 This leaves tools available to standalone ordinary-Emacs commands but retains the
-old panel's exact app/bang/fallback experience. The new size/height-limit bindings
-are absent. Keep the same named Command–Space registration. Do not disable global
+old panel's exact app/search-tool/fallback experience. The new size/height-limit
+bindings are absent. Keep the same named Command–Space registration. Do not disable global
 Vertico or remove package settings just to revert the presentation.
 
 ## Plan and acceptance
@@ -167,8 +167,8 @@ Vertico or remove package settings just to revert the presentation.
   dictionaries. Record package revision and helper/compiler requirements without
   copying credentials or the user's full init into test environments.
 - [x] Run standalone ordinary-frame `launcher-buffer` with Portal absent: app
-  selection, bang/web fallback, `d SPC`, raw multiword/Unicode input, Return lookup,
-  real definition display, Back, correction/retry, and final quit.
+  selection, search tools/web fallback, `d SPC`, raw multiword/Unicode input,
+  Return lookup, real definition display, Back, correction/retry, and final quit.
 - [x] Verify the traditional `launcher` remains minibuffer-based; preserve refresh,
   selected candidate Return, spaces and existing search behavior. Stub external
   launches/browser actions in automated checks; distinguish any real smoke checks.

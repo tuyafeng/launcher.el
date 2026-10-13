@@ -17,7 +17,7 @@
                                                    (window-list nil 'never))))
                                        'return))
             (launcher-gui--drive #'launcher '("some words" return))
-            (launcher-gui--drive #'launcher '("!gh portal launcher" return))
+            (launcher-gui--drive #'launcher '("gh portal launcher" return))
             (should (equal '("/Applications/Calculator.app") launcher-gui--launched))
             (should (equal '("https://github.com/search?q=portal%20launcher"
                              "https://www.google.com/search?q=some%20words")

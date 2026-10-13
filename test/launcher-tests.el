@@ -47,7 +47,7 @@
 
 (ert-deftest launcher-search-tool-search-preserves-query ()
   (let* ((query "portal launcher & 中文")
-         (result (launcher-test--run (concat "!gh " query))))
+         (result (launcher-test--run (concat "gh " query))))
     (should (equal (plist-get result :searched)
                    (list (concat "https://github.com/search?q=" (url-hexify-string query)))))))
 
@@ -58,10 +58,10 @@
          (launcher--query-session session))
     (unwind-protect
         (progn
-          (launcher--query-update session "!gh")
+          (launcher--query-update session "gh")
           (should (equal (launcher--result-execute (car (launcher--query-session-results session)))
-                         '(:input "!gh ")))
-          (dolist (input '("!gh " "!gh \t "))
+                         '(:input "gh ")))
+          (dolist (input '("gh " "gh \t "))
             (launcher--query-update session input)
             (should (launcher--query-session-route session))
             (let ((results (launcher--query-session-results session)))
@@ -79,7 +79,7 @@
          (launcher--query-session session))
     (unwind-protect
         (progn
-          (dolist (input '("calc" "1+2" "!gh" "!gh emacs"))
+          (dolist (input '("calc" "1+2" "gh" "gh emacs"))
             (launcher--query-update session input)
             (should (launcher--query-session-results session))
             (should-not (seq-find (lambda (r) (eq (plist-get r :id) 'fallback))
@@ -125,7 +125,7 @@
 
 (ert-deftest launcher-search-tool-url-input-still-searches ()
   (let* ((query "https://example.com/path?q=emacs#section")
-         (result (launcher-test--run (concat "!gh " query))))
+         (result (launcher-test--run (concat "gh " query))))
     (should (equal (plist-get result :searched)
                    (list (concat "https://github.com/search?q=" (url-hexify-string query)))))))
 

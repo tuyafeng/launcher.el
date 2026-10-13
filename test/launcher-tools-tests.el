@@ -145,7 +145,7 @@
     (should-error (launcher--tools) :type 'user-error))
   (launcher-test--with-session nil nil
     (should (= 2 (length (launcher--query-session-tools session))))
-    (launcher--query-update session "!gh emacs")
+    (launcher--query-update session "gh emacs")
     (should-not (launcher--query-session-route session))
     (should (eq (plist-get (car (launcher--query-session-results session)) :id) 'fallback))))
 
@@ -317,32 +317,52 @@
       (should-not launcher-selection-history))))
 
 (ert-deftest launcher-tools-searches-share-prefix-routing ()
-  (let ((tools (list (launcher-search-tool "!g" :name "Google"
+  (let ((tools (list (launcher-search-tool "g" :name "Google"
                                            :url "https://google.example/?q=%s")
-                     (launcher-search-tool "!gh" :name "GitHub"
+                     (launcher-search-tool "gh" :name "GitHub"
                                            :url "https://github.example/?q=%s"))) urls)
     (launcher-test--with-session nil tools
-      (launcher--query-update session "!g")
+      (launcher--query-update session "g")
       (should-not (launcher--query-session-route session))
-      (should (equal '("!g" "!gh")
+      (should (equal '("g" "gh")
                      (mapcar (lambda (r) (plist-get r :title)) (launcher--query-session-results session))))
       (cl-letf (((symbol-function 'browse-url) (lambda (url &rest _) (push url urls))))
-        (dolist (input '("!g emacs" "!gh launcher"))
+        (dolist (input '("g emacs" "gh launcher"))
           (launcher--query-update session input)
           (should (= 1 (length (launcher--query-session-results session))))
           (launcher--result-execute (car (launcher--query-session-results session)))))
       (should (equal '("https://github.example/?q=launcher" "https://google.example/?q=emacs") urls))
-      (launcher--query-update session "!g ")
+      (launcher--query-update session "g ")
       (should (launcher--query-session-route session))
-      (should (equal '(:input "!g ")
+      (should (equal '(:input "g ")
                      (launcher--result-execute (car (launcher--query-session-results session))))))))
+
+(ert-deftest launcher-tools-custom-bang-prefix-remains-supported ()
+  (launcher-test--with-session nil
+      (list (launcher-search-tool "!gh" :name "GitHub"
+                                  :url "https://github.example/?q=%s"))
+    (launcher--query-update session "!gh")
+    (should (equal '(:input "!gh ")
+                   (launcher--result-execute
+                    (car (launcher--query-session-results session)))))
+    (launcher--query-update session "!gh emacs & lisp")
+    (should (launcher--query-session-route session))
+    (should (= 1 (length (launcher--query-session-results session))))
+    (let (url)
+      (cl-letf (((symbol-function 'browse-url)
+                 (lambda (value &rest _) (setq url value))))
+        (launcher--result-execute
+         (car (launcher--query-session-results session))))
+      (should (equal (concat "https://github.example/?q="
+                             (url-hexify-string "emacs & lisp"))
+                     url)))))
 
 (ert-deftest launcher-tools-explicit-prefix-is-exclusive-without-fallback ()
   (let (calls)
     (launcher-test--with-session '(("Dictionary" . "/Applications/Dictionary.app"))
         `((nil :name "General" :submit launcher-test--submit-action :query ,(lambda (text) (push (list 'general text) calls) nil))
           ("d" :name "Dictionary" :submit launcher-test--submit-action :query ,(lambda (text) (push (list 'dictionary text) calls) nil))
-          ,(launcher-search-tool "!gh" :name "GitHub" :url "https://github.com/search?q=%s"))
+          ,(launcher-search-tool "gh" :name "GitHub" :url "https://github.com/search?q=%s"))
       (with-temp-buffer
         (setq-local launcher--query-session session)
         (setf (launcher--query-session-buffer session) (current-buffer))
@@ -354,17 +374,17 @@
         (should (string-match-p "No results"
                                 (overlay-get (launcher--query-session-status-overlay session) 'after-string)))
         (setq calls nil)
-        (erase-buffer) (insert "!gh emacs")
+        (erase-buffer) (insert "gh emacs")
         (launcher--query-update session (buffer-string))
         (should-not calls)
         (should (= 1 (length (launcher--query-session-results session))))
-        (should (equal "!gh" (plist-get (car (launcher--query-session-results session)) :id)))
-        (erase-buffer) (insert "!gh")
+        (should (equal "gh" (plist-get (car (launcher--query-session-results session)) :id)))
+        (erase-buffer) (insert "gh")
         (launcher--query-update session (buffer-string))
-        (should (equal '((general "!gh")) calls))
+        (should (equal '((general "gh")) calls))
         (should-not (launcher--query-session-route session))
         (setq calls nil)
-        (should (equal '(:input "!gh ")
+        (should (equal '(:input "gh ")
                        (launcher--result-execute (car (launcher--query-session-results session)))))
         (erase-buffer) (insert "unknown")
         (launcher--query-update session (buffer-string))
@@ -490,8 +510,8 @@
   (dolist (value '(1 "text" (:input 3) (:input "ok" :extra t)))
     (should-error (launcher-tools-test--execute (launcher-tools-test--item 'x "X" (lambda () value)))))
   (should-not (launcher-tools-test--execute (launcher-tools-test--item 'x "X")))
-  (should (equal '(:input "!g ")
-                 (launcher-tools-test--execute (launcher-tools-test--item 'x "X" (lambda () '(:input "!g "))))))
+  (should (equal '(:input "g ")
+                 (launcher-tools-test--execute (launcher-tools-test--item 'x "X" (lambda () '(:input "g "))))))
   (let ((buffer (generate-new-buffer " *tool-test*")))
     (unwind-protect
         (should (eq buffer (launcher-tools-test--execute (launcher-tools-test--item 'x "X" (lambda () buffer)))))
@@ -669,7 +689,7 @@
                   :type 'user-error)))
 
 (ert-deftest launcher-tools-exit-records-final-query ()
-  (dolist (input '("calc" "!gh emacs" "1+2" "d  hello " "d missing" "d " "d \t " "" " \t\n"))
+  (dolist (input '("calc" "gh emacs" "1+2" "d  hello " "d missing" "d " "d \t " "" " \t\n"))
     (let ((minibuffer-history nil) (launcher-selection-history nil))
       (launcher-test--with-session nil
           '(("d" :name "Dictionary" :submit launcher-test--submit-action :query ignore))
@@ -742,7 +762,7 @@
       (should (= (if fails 0 1) (length launcher-selection-history))))))
 
 (ert-deftest launcher-tools-history-navigation ()
-  (let ((minibuffer-history '("d hello" "1+2" "!gh emacs" "d " "calc"))
+  (let ((minibuffer-history '("d hello" "1+2" "gh emacs" "d " "calc"))
         (minibuffer-default nil)
         (minibuffer-default-add-function nil)
         (minibuffer-history-sexp-flag nil)

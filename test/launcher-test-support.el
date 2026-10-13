@@ -3,7 +3,7 @@
 (require 'ert)
 
 (defconst launcher-test--search-tools
-  (list (launcher-search-tool "!gh" :name "GitHub"
+  (list (launcher-search-tool "gh" :name "GitHub"
                               :url "https://github.com/search?q=%s"))
   "Explicit GitHub search configuration shared by batch and GUI tests.")
 

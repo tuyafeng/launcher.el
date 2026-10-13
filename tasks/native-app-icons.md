@@ -243,10 +243,11 @@ This generation check also applies to callbacks/queued notifications, not only P
 2. Set command-local `completion-extra-properties` to this affixation function
    when supported icons are enabled. Attach the image with a `display` property on
    a prefix placeholder, followed by a small gap. Use consistent prefix width for
-   apps still loading and bang entries; bangs do not initiate app-icon requests.
+   apps still loading and search-tool entries; search tools do not initiate
+   app-icon requests.
 3. Lookup by candidate-to-path mapping, so duplicate app names remain correct.
    Do not add icons to the candidate string, alter matching/history, or change the
-   no-match web-search and bang dispatch logic.
+   no-match web-search and search-tool dispatch logic.
 4. Do not shell out, traverse bundle files, or run a synchronous freshness scan in
    the affixation callback. It may inspect memory/cache state and enqueue work.
 5. Default completion and Vertico must remain usable. Use the standard affixation

@@ -24,8 +24,8 @@ Read [shared decisions](README.md). Scope is launcher UI, not native panel sizin
   there. The function remains active until external success or explicit quit;
   query/result transitions do not return from the outer invocation. Own any
   required command loop/recursive edit inside Launcher, not in user config.
-- Selected app/bang/fallback success ends the interaction, allowing a host to
-  dismiss normally. In normal Emacs, restore the previous window's presentation
+- Selected app/search-tool/fallback success ends the interaction, allowing a host
+  to dismiss normally. In normal Emacs, restore the previous window's presentation
   without stealing focus back from the launched application. Quit restores only
   windows still owned by this interaction; never overwrite unrelated user changes.
 - Use an optional Vertico buffer presentation for the initial implementation.
@@ -73,7 +73,8 @@ Read [shared decisions](README.md). Scope is launcher UI, not native panel sizin
 ## Acceptance
 
 - [x] `launcher` still uses the minibuffer and all existing selection, Space,
-  empty/bang-only cancellation, URL encoding, fallback, and refresh tests pass.
+  empty-input/blank-search-query cancellation, URL encoding, fallback, and refresh
+  tests pass.
 - [x] `launcher-buffer` works in ordinary graphical Emacs with Portal not loaded
   or on the load path. It does not resize/delete the invoking Emacs frame.
 - [x] App and web behavior is shared; highlighted Return/arrow selection and

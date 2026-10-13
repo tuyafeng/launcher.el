@@ -147,11 +147,13 @@ covers directly opening a URL.  Missing entries show blank icon slots.
 
 #+begin_src emacs-lisp
 (setq launcher-builtin-icons
-      (when (require 'nerd-icons nil t)
+      (when (featurep 'nerd-icons)
         `((calculator . ,(nerd-icons-faicon "nf-fa-calculator"))
           (search     . ,(nerd-icons-faicon "nf-fa-search"))
           (url        . ,(nerd-icons-faicon "nf-fa-link")))))
 #+end_src
+
+Load ~nerd-icons~ before evaluating this example to configure the icons.
 
 Values use the existing icon formats: nil, a string (with text properties),
 or ~(:file PNG-PATH)~.  Launcher does not require nerd-icons.
@@ -183,7 +185,7 @@ To add a search tool while keeping the current list:
 #+begin_src emacs-lisp
 (add-to-list 'launcher-tools
              (launcher-search-tool
-              "!w" :name "Wikipedia"
+              "w" :name "Wikipedia"
               :url "https://en.wikipedia.org/w/index.php?search=%s"
               :icon "📚"))
 #+end_src
@@ -204,7 +206,7 @@ and ~:submit~ executes the selected candidate.
 
 (setq launcher-tools
       (list
-       (launcher-search-tool "!gh" :name "GitHub"
+       (launcher-search-tool "gh" :name "GitHub"
                              :url "https://github.com/search?q=%s" :icon "🔎")
        '("d" :name "Dictionary" :icon "📖" :query my-definition-query
              :submit my-definition-submit :debounce 0.2)
@@ -319,7 +321,7 @@ filters their titles using your completion settings.
   nil)
 
 (add-to-list 'launcher-tools
-             '("play" :name "播放音乐" :candidates my/music-candidates
+             '("play" :name "Play Music" :candidates my/music-candidates
                       :submit my/play-song))
 #+end_src
 
@@ -442,7 +444,7 @@ M-x.app registers the ~emacs://~ URL scheme, letting you invoke Elisp from a glo
 This is part of a broader effort to replace Raycast with Emacs.
 
 ** DONE *Search tools*
-~!g query~, ~!gh repo~, ~!yt video~ to redirect input to configurable URL templates
+~g query~, ~gh repo~, ~yt video~ to redirect input to configurable URL templates
 ** TODO *Custom commands*
 register named elisp actions alongside apps via ~launcher-register-command~
 ** TODO *Built-in extensions*

@@ -4,6 +4,11 @@ The full-buffer entry point and its interaction lifecycle were removed on
 2026-10-12. Only `launcher` remains. The tasks and evidence below are historical
 records; their buffer-entry configuration examples no longer apply.
 
+The former `launcher-bangs` setting has been replaced by ordinary search tools in
+`launcher-tools`. Use prefixes such as `g`, `gh`, `w`, and `yt` in current examples;
+custom `!` prefixes remain supported. References to bangs in completion records
+and evidence logs describe the historical implementation.
+
 Planning only: every task starts at `status: todo`. Proposed names/configuration
 are contracts for implementation, not features already available. Use one Markdown
 file per task, stable kebab-case `id`, `status: todo|done`, and `depends_on` containing
@@ -70,7 +75,7 @@ are explicit checklist gates in the final configuration task, not invalid local
   backend. Third-party major modes, faces, read-only behavior and buffer ownership
   must survive presentation.
 - Only submission triggers lookup. Never send a query while typing, narrowing, or
-  previewing. Preserve existing web bangs and fallback semantics.
+  previewing. Preserve search-tool routing and web fallback semantics.
 - Keep ordinary buffer scrolling, copying, and selection. If a result grows,
   preserve the reader's position unless they were following the end; never focus
   or reopen an obsolete result from a late update.

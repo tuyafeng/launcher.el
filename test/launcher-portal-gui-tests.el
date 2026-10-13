@@ -128,7 +128,7 @@ Return `returned', `quit' or (error MESSAGE), checking that the panel closed."
                          'return))))
       (should (eq 'minibuffer kind)))
     (should (eq 'returned
-                (launcher-portal--drive 'my/app-launcher '("!gh portal launcher" return))))
+                (launcher-portal--drive 'my/app-launcher '("gh portal launcher" return))))
     (should (eq 'returned
                 (launcher-portal--drive 'my/app-launcher '("zz top" return))))
     (should (equal (reverse launcher-portal--actions)

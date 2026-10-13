@@ -350,7 +350,7 @@ It is named like the launcher's own, as a shared directory may hold."
         (setq launcher-builtin-icons '((calculator . "C") (search . "S") (url . "U")))
         (dolist (case '(("1+2" . "C") ("= (" . "C")
                         ("unmatched" . "S") ("HTTPS://example.org" . "U")
-                        ("!gh" . "S") ("!gh " . "S") ("!gh emacs" . "S")
+                        ("gh" . "S") ("gh " . "S") ("gh emacs" . "S")
                         ("nil emacs" . "S") ("own emacs" . "O")
                         ("blank emacs" . "") ("plain " . nil)))
           (launcher--query-update session (car case))
@@ -360,7 +360,7 @@ It is named like the launcher's own, as a shared directory may hold."
                      (launcher-icons-prefix (plist-get (car results) :icon))
                      (launcher-icons-prefix (cdr case))))))
         (setq launcher-builtin-icons '((search . "N")))
-        (launcher--query-update session "!gh emacs")
+        (launcher--query-update session "gh emacs")
         (should (equal-including-properties
                  (launcher-icons-prefix
                   (plist-get (car (launcher--query-session-results session)) :icon))
@@ -533,10 +533,10 @@ It is named like the launcher's own, as a shared directory may hold."
   (should (file-readable-p launcher-icons--script)))
 
 (defun launcher-icons-test--query-all (entries)
-  "Return a session with all ENTRIES and the search entry !g for affixation checks."
+  "Return a session with all ENTRIES and the search entry g for affixation checks."
   (let* ((session (launcher--query-create
                    entries (list (launcher--tool-from-entry
-                                  (launcher-search-tool "!g" :name "Google"
+                                  (launcher-search-tool "g" :name "Google"
                                                         :url "https://google.example/?q=%s")))))
          (launcher--query-session session))
     (launcher-icons-prepare (mapcar #'cdr entries))
