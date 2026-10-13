@@ -17,6 +17,8 @@
 
 ;;; Code:
 
+(defvar launcher-builtin-icons)
+
 (defcustom launcher-show-icons t
   "Non-nil means show application icons in the launcher.
 Icons need macOS and a graphical frame that displays PNG images;
@@ -56,8 +58,7 @@ the PNGs it made there."
 (defconst launcher-icons--png-regexp "\\`[0-9a-f]\\{40\\}\\.png\\'"
   "Matches the names of the PNGs the launcher makes.")
 
-(defvar launcher-icons--files (make-hash-table :test #'equal)
-  "PNG files of apps' icons, by app path, as of the launcher's start.")
+(defvar launcher--apps nil)
 
 (defvar launcher-icons--requested (make-hash-table :test #'equal)
   "PNG files a worker of this Emacs was asked to make, and did not.
@@ -101,6 +102,28 @@ FRAME defaults to the selected frame."
     (and (file-directory-p directory)
          (directory-files directory t launcher-icons--png-regexp))))
 
+(defun launcher-icons-app (app)
+  "Return (:file PNG-PATH) for application name or path APP, or nil.
+Names match the cached display name or bundle base name exactly.  An
+ambiguous name returns nil.  Paths need not be in the application index.
+The PNG may not exist yet.  This function neither discovers applications
+nor starts an icon worker."
+  (when (stringp app)
+    (let ((path
+           (if (and (string-suffix-p ".app" (directory-file-name app))
+                    (or (string-match-p "/" app) (file-directory-p app)))
+               (directory-file-name (expand-file-name app))
+             (let (matches)
+               (dolist (entry launcher--apps)
+                 (when (or (equal app (car entry))
+                           (equal app (file-name-base (cdr entry))))
+                   (push (directory-file-name (expand-file-name (cdr entry))) matches)))
+               (setq matches (delete-dups matches))
+               (when (= (length matches) 1) (car matches))))))
+      (when (and path (string-suffix-p ".app" path) (file-directory-p path))
+        (when-let* ((file (launcher-icons--file path)))
+          (list :file file))))))
+
 (defun launcher-icons--stop-stuck ()
   "Stop a worker running for longer than `launcher-icons--timeout'.
 The icons it was asked for are asked for again."
@@ -113,16 +136,15 @@ The icons it was asked for are asked for again."
 (defun launcher-icons-prepare (paths)
   "Make the missing icons of the apps at PATHS, in the background.
 Call when a launcher with icons starts."
-  (launcher-icons--stop-stuck)
-  (clrhash launcher-icons--files)
-  (let (missing)
-    (dolist (path paths)
-      (when-let* ((file (launcher-icons--file path)))
-        (puthash path file launcher-icons--files)
-        (unless (or (file-exists-p file) (gethash file launcher-icons--requested))
-          (push (cons path file) missing))))
-    (when missing
-      (launcher-icons--start (nreverse missing)))))
+  (when launcher-show-icons
+    (launcher-icons--stop-stuck)
+    (let (missing)
+      (dolist (path paths)
+        (when-let* ((file (launcher-icons--file path)))
+          (unless (or (file-exists-p file) (gethash file launcher-icons--requested))
+            (push (cons path file) missing))))
+      (when missing
+        (launcher-icons--start (nreverse missing))))))
 
 (defun launcher-icons--start (icons)
   "Start a worker making ICONS, a list of (APP-PATH . PNG-FILE).
@@ -158,18 +180,45 @@ as when it crashed or was killed, forget all."
     (when (or (not finished) (file-exists-p (cdr icon)))
       (remhash (cdr icon) launcher-icons--requested))))
 
-(defun launcher-icons-prefix (app-path)
-  "Return the completion prefix showing the icon of the app at APP-PATH.
-Without APP-PATH, or while its icon is missing, return blank space as
-large, so that names stay aligned and rows equally tall."
-  (let ((file (and app-path (gethash app-path launcher-icons--files)))
-        (size launcher-icon-size))
-    (concat (propertize " " 'display
-                        (if (and file (file-exists-p file))
-                            (create-image file 'png nil :width size :height size
-                                          :scale 1 :ascent 'center)
-                          `(space :width (,size) :height (,size))))
-            " ")))
+(defun launcher-icons-valid-p (icon)
+  "Return non-nil if ICON is a supported text, file or built-in icon."
+  (pcase icon
+    ((or 'nil (pred stringp)) t)
+    (`(:file ,path) (stringp path))
+    (`(:builtin ,key) (memq key '(calculator search url)))))
+
+(defun launcher-icons-prefix (icon)
+  "Return a completion prefix for ICON, respecting `launcher-show-icons'.
+ICON is a propertized string, (:file PNG-PATH), (:builtin KEY), or nil.
+Built-in references resolve through `launcher-builtin-icons' at display
+time, without following further references.  Missing or unusable images
+show an equally sized blank.  Text keeps its properties
+and is centered in a slot at least `launcher-icon-size' pixels wide."
+  (when (and launcher-show-icons (consp icon) (eq (car icon) :builtin))
+    (setq icon (and (boundp 'launcher-builtin-icons)
+                    (alist-get (cadr icon) launcher-builtin-icons))))
+  (cond
+   ((not launcher-show-icons) "")
+   ((and (stringp icon) (not (string-empty-p icon)))
+    (let* ((padding (max 0 (- launcher-icon-size
+                             (string-pixel-width icon (current-buffer)))))
+           (half (/ padding 2.0)))
+      (concat (propertize " " 'display `(space :width (,half)))
+              icon
+              (propertize " " 'display
+                          `(space :width (,half) :height (,launcher-icon-size)))
+              " ")))
+   (t
+    (let* ((size launcher-icon-size)
+           (file (and (consp icon) (plist-get icon :file)))
+           (image (condition-case nil
+                      (when (and file (file-regular-p file) (file-readable-p file))
+                        (create-image file 'png nil :width size :height size
+                                      :scale 1 :ascent 'center))
+                    (error nil))))
+      (concat (propertize " " 'display
+                          (or image `(space :width (,size) :height (,size))))
+              " ")))))
 
 (defun launcher-icons-index-refreshed (paths)
   "Note that the app index now holds PATHS: delete the icons of other apps.

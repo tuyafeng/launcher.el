@@ -2,11 +2,12 @@
 
 ;; GUI ONLY: run in the test VM with `bash test/vm.sh', which runs
 ;; test/gui.sh.  Real icons of the VM's system apps, made by the real
-;; worker into a temporary cache, shown by Vertico, stock completion and
-;; launcher-buffer, in the fixture of launcher-buffer-gui-tests.el.
+;; worker into a temporary cache, shown by Vertico and stock completion
+;; using launcher-gui-test-support.el.
 ;; Launching and browsing are stubbed.
 
-(require 'launcher-buffer-gui-tests)
+(require 'launcher-gui-test-support)
+(require 'marginalia)
 
 (defconst launcher-gui-icons--names
   '("Calculator" "Calendar" "Chess" "Clock" "Contacts" "Maps" "Notes" "Photos")
@@ -42,7 +43,6 @@
      (let* ((directory (file-name-as-directory (make-temp-file "launcher-icons-gui" t)))
             (launcher-icon-cache-directory (expand-file-name "cache/" directory))
             (launcher-show-icons t)
-            (launcher-icons--files (make-hash-table :test #'equal))
             (launcher-icons--requested (make-hash-table :test #'equal))
             (launcher-icons--process nil)
             (apps (launcher-gui-icons--apps directory))
@@ -87,15 +87,15 @@ WIDTH is the pixel width of the row's text before its candidate."
   "Check ROWS of a list of launcher candidates: one icon per app, aligned."
   (should rows)
   (dolist (row rows)
-    (let ((app (string-match-p "\\.app\\|Calculator\\|Calendar\\|Chess\\|Clock\\|Contacts\\|Maps\\|Notes\\|Photos"
-                               (car row))))
+    (let ((app (and (not (string-match-p "Search web:" (car row))) (string-match-p "\\.app\\|Calculator\\|Calendar\\|Chess\\|Clock\\|Contacts\\|Maps\\|Notes\\|Photos"
+                               (car row)))))
       (if app
           (progn
             (should (= (length (nth 1 row)) 1))
             (should (string-match-p launcher-icons--png-regexp
                                     (file-name-nondirectory (car (nth 1 row))))))
         (should-not (nth 1 row)))))
-  ;; Icons, and the space of bangs, are equally wide.
+  ;; Icons, and the space of search tools, are equally wide.
   (should (= (length (delete-dups (mapcar (lambda (row) (nth 2 row)) rows))) 1)))
 
 (defun launcher-gui-icons--quietly (start strokes)
@@ -123,13 +123,13 @@ the selected row included, without changing what is launched."
       (unwind-protect
           (launcher-gui--drive
            #'launcher
-           (list (lambda ()
+           (list "C" (lambda ()
                    (redisplay t)
                    (launcher-gui--capture "icons-vertico")
                    (push (list (launcher-gui-icons--vertico-string)
                                (launcher-gui-icons--line-heights (active-minibuffer-window)))
                          states))
-                 "No"
+                 'backspace "No"
                  (lambda ()
                    (redisplay t)
                    (launcher-gui--capture "icons-vertico-notes")
@@ -146,7 +146,7 @@ the selected row included, without changing what is launched."
                    (mapcar (lambda (row) (list (car row) (length (nth 1 row)) (nth 2 row))) rows)
                    heights (default-line-height))
           (launcher-gui-icons--check-rows rows)
-          ;; Rows of icons and of bangs are equally tall.
+          ;; Rows of icons and of search tools are equally tall.
           (should (= (length (delete-dups (seq-take (cdr heights) (length rows)))) 1))
           ;; The selected row keeps its icon and its highlighting.
           (should (launcher-gui--selected-row string))))
@@ -156,6 +156,47 @@ the selected row included, without changing what is launched."
         (should-not (equal (nth 1 (nth 0 rows)) (nth 1 (nth 1 rows)))))
       (should (equal launcher-gui--launched (list launcher-gui-icons--fake-notes)))
       (should-not launcher-gui--searched))))
+
+(ert-deftest launcher-gui-icons-tool-defaults ()
+  "Tool entries and inherited images align with text and blank overrides."
+  (launcher-gui-icons--with
+    (let* ((icon (launcher-icons-app (cdar apps)))
+           (text (propertize "T" 'face '(:foreground "red")))
+           (launcher-tools
+            (list (list "tool" :name "Icon tool" :icon icon
+                        :candidates (list '(:id image :title "Inherited image")
+                                          (list :id text :title "Text override" :icon text)
+                                          '(:id blank :title "Blank override" :icon nil))
+                        :submit #'ignore))))
+      (vertico-mode 1)
+      (unwind-protect
+          (launcher-gui-icons--quietly
+           #'launcher
+           (list "tool"
+                 (lambda ()
+                   (redisplay t)
+                   (let ((rows (launcher-gui-icons--rows (launcher-gui-icons--vertico-string))))
+                     (should (= (length rows) 1))
+                     (should (equal (nth 1 (car rows)) (list (cadr icon)))))
+                   (launcher-gui--capture "icons-tool-entry"))
+                 " "
+                 (lambda ()
+                   (redisplay t)
+                   (let* ((string (launcher-gui-icons--vertico-string))
+                          (rows (launcher-gui-icons--rows string))
+                          (pos (string-match "T.*Text override" string))
+                          (heights (launcher-gui-icons--line-heights (active-minibuffer-window))))
+                     (should (= (length rows) 3))
+                     (should (equal (nth 1 (car rows)) (list (cadr icon))))
+                     (should-not (nth 1 (nth 1 rows)))
+                     (should-not (nth 1 (nth 2 rows)))
+                     (should pos)
+                     (should (equal (get-text-property pos 'face string)
+                                    (get-text-property 0 'face text)))
+                     (should (= (length (delete-dups (seq-take (cdr heights) 3))) 1)))
+                   (launcher-gui--capture "icons-tool-defaults"))
+                 'quit))
+        (vertico-mode -1)))))
 
 (ert-deftest launcher-gui-icons-stock-completion ()
   "Stock completion's *Completions* shows the icons too."
@@ -182,25 +223,6 @@ the selected row included, without changing what is launched."
         (dolist (row apps)
           (should (= (length (nth 1 row)) 1))))
       (should-not launcher-gui--launched))))
-
-(ert-deftest launcher-gui-icons-launcher-buffer ()
-  "The full-buffer launcher shows the same icons."
-  (launcher-gui-icons--with
-    (let (string)
-      (vertico-mode 1)
-      (unwind-protect
-          (launcher-gui-icons--quietly
-           #'launcher-buffer
-           (list "C"
-                 (lambda ()
-                   (setq string (plist-get (launcher-gui--snapshot "icons-launcher-buffer")
-                                           :string)))
-                 'escape))
-        (vertico-mode -1))
-      (let ((rows (launcher-gui-icons--rows string)))
-        (message "Icons: launcher-buffer rows %S"
-                 (mapcar (lambda (row) (list (car row) (length (nth 1 row)))) rows))
-        (launcher-gui-icons--check-rows rows)))))
 
 (provide 'launcher-icons-gui-tests)
 ;;; launcher-icons-gui-tests.el ends here

@@ -43,8 +43,8 @@
 
 (require 'launcher-osx-dictionary)
 (setq launcher-tools
-      '(("d" :name "Dictionary" :prompt "Word: "
-              :function launcher-osx-dictionary-lookup)))
+      '(("d" :name "Dictionary"
+              :query launcher-osx-dictionary-query :submit launcher-osx-dictionary-submit)))
 
 ;;; The proposed Portal command (tools.el's `use-package portal' :config)
 
@@ -58,19 +58,8 @@ With a prefix argument, rebuild the application index first."
   (let ((vertico-count 6)
         (portal-launcher-size '(720 auto))
         (portal-launcher-height-limits '(content 480)))
-    (portal-launcher-present #'launcher-buffer
-                             :kind 'buffer
-                             :mode-line nil)))
-
-;; The rollback: today's minibuffer-only panel, under another name here.
-(defun my/app-launcher-minibuffer ()
-  "Launch an app or search the web in Portal's minibuffer-only panel."
-  (interactive)
-  (let ((vertico-count 6)
-        ;; A minibuffer-only host cannot show tool result buffers.
-        ;; Disable tools only for this old app/search presentation.
-        (launcher-tools nil))
-    (portal-launcher-present #'launcher :kind 'minibuffer)))
+    (portal-launcher-present #'launcher
+                             :kind 'minibuffer)))
 
 ;; The checks register these on a test chord, not Command-Space.
 

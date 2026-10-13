@@ -115,7 +115,6 @@ Return what it printed, and the PNG files."
   ;; `launcher-icons-prepare' with the real worker, as a launcher starts.
   (launcher-icons-worker-test--with-directory directory
     (let ((launcher-icon-cache-directory (expand-file-name "cache/" directory))
-          (launcher-icons--files (make-hash-table :test #'equal))
           (launcher-icons--requested (make-hash-table :test #'equal))
           (launcher-icons--process nil)
           (apps (list launcher-icons-worker-test--calculator launcher-icons-worker-test--notes))
@@ -125,7 +124,7 @@ Return what it printed, and the PNG files."
         (accept-process-output launcher-icons--process 0.05))
       (message "Worker: cache warmed with 2 apps in %.3fs" (- (float-time) start))
       (dolist (app apps)
-        (should (eq (car (get-text-property 0 'display (launcher-icons-prefix app))) 'image)))
+        (should (eq (car (get-text-property 0 'display (launcher-icons-prefix (launcher-icons-app app)))) 'image)))
       ;; A new launcher, with the icons on disk, starts no worker.
       (let ((worker launcher-icons--process))
         (clrhash launcher-icons--requested)

@@ -2,7 +2,7 @@
 # GUI ONLY, in the test VM, from a built Portal checkout: run it with
 # bash test/portal-vm.sh [SELECTOR].  Runs the Portal-hosted launcher checks
 # in a disposable `emacs -Q' with Portal, the user's completion setup
-# (test/portal-acceptance-config.el) and the real Apple Dictionary.
+# (test/portal-acceptance-config.el) with stubbed app and browser actions.
 set -eu
 portal=$(pwd)
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)

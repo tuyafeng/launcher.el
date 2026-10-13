@@ -129,11 +129,11 @@ Afterwards, kill the result buffers and delete the helper."
   ;; a lookup then says the package is missing.
   (should (string-suffix-p
            (prin1-to-string
-            '(nil nil t "Needs the osx-dictionary package: M-x package-install RET osx-dictionary"))
+            '(nil ("g") t "Needs the osx-dictionary package: M-x package-install RET osx-dictionary"))
            (launcher-osx-dictionary-test--emacs
             '(progn
                (require 'launcher-osx-dictionary)
-               (prin1 (list (featurep 'osx-dictionary) launcher-tools
+               (prin1 (list (featurep 'osx-dictionary) (mapcar #'car launcher-tools)
                             (fboundp 'launcher-osx-dictionary-lookup)
                             (let ((system-type 'darwin))
                               (condition-case err
@@ -151,11 +151,13 @@ Afterwards, kill the result buffers and delete the helper."
 
 (ert-deftest launcher-osx-dictionary-incompatible-package ()
   (launcher-osx-dictionary-test--with
-    (cl-letf (((symbol-function 'osx-dictionary--insert-search-result) nil))
-      (should (equal "This osx-dictionary lacks osx-dictionary--insert-search-result; \
+    ;; A bound variable with the same name does not supply the function.
+    (cl-progv '(osx-dictionary--insert-search-result) '(t)
+      (cl-letf (((symbol-function 'osx-dictionary--insert-search-result) nil))
+        (should (equal "This osx-dictionary lacks osx-dictionary--insert-search-result; \
 launcher-osx-dictionary was tested with commit 655bca5"
                      (launcher-osx-dictionary-test--error
-                      #'launcher-osx-dictionary-lookup "hello"))))
+                      #'launcher-osx-dictionary-lookup "hello")))))
     (should-not (launcher-osx-dictionary-test--calls))))
 
 ;;; Lookups
@@ -175,6 +177,8 @@ launcher-osx-dictionary was tested with commit 655bca5"
       (with-current-buffer buffer
         (should (eq 'osx-dictionary-mode major-mode))
         (should buffer-read-only)
+        (should-not (buffer-modified-p))
+        (should (eq t buffer-undo-list))
         (should visual-line-mode)
         (should launcher-osx-dictionary-result-mode)
         (should (eq osx-dictionary-mode-header-line header-line-format))
@@ -310,6 +314,59 @@ tools: run xcode-select --install"
 
 ;;; Result keys
 
+(ert-deftest launcher-osx-dictionary-speech-uses-stdin-asynchronously ()
+  ;; Replace only the speech executable with cat: exercise real process I/O
+  ;; without playing audio, including query text that resembles options.
+  (launcher-osx-dictionary-test--with
+    (with-current-buffer (launcher-osx-dictionary--render "-v 中文; ice cream" "Definition")
+      (let ((output (generate-new-buffer " *dictionary-speech-test*"))
+            (original (symbol-function 'make-process)))
+        (unwind-protect
+            (progn
+              (cl-letf (((symbol-function 'make-process)
+                         (lambda (&rest args)
+                           (should (equal '("say" "-f" "-") (plist-get args :command)))
+                           (apply original (plist-put (plist-put args :command '("cat"))
+                                                      :buffer output))))
+                        ((symbol-function 'executable-find) (lambda (_) "/fake/say")))
+                (call-interactively (key-binding "r")))
+              (should (processp launcher-osx-dictionary--speech-process))
+              (let ((deadline (+ (float-time) 3)))
+                (while (and (process-live-p launcher-osx-dictionary--speech-process)
+                            (< (float-time) deadline))
+                  (accept-process-output launcher-osx-dictionary--speech-process 0.05)))
+              (should-not (process-live-p launcher-osx-dictionary--speech-process))
+              (should (equal "-v 中文; ice cream\n"
+                             (with-current-buffer output (buffer-string)))))
+          (launcher-osx-dictionary--stop-speech)
+          (kill-buffer output))))))
+
+(ert-deftest launcher-osx-dictionary-refresh-and-kill-stop-speech ()
+  (launcher-osx-dictionary-test--with
+    (with-current-buffer (launcher-osx-dictionary--render "hello" "Definition")
+      (let ((process (make-process :name "dictionary-test-speech" :command '("cat")
+                                   :connection-type 'pipe :noquery t)))
+        (setq launcher-osx-dictionary--speech-process process)
+        (launcher-osx-dictionary--render "world" "New definition")
+        (should-not (process-live-p process))
+        (should-not launcher-osx-dictionary--speech-process))
+      (let ((process (make-process :name "dictionary-test-speech" :command '("cat")
+                                   :connection-type 'pipe :noquery t)))
+        (setq launcher-osx-dictionary--speech-process process)
+        (kill-buffer (current-buffer))
+        (should-not (process-live-p process))))))
+
+(ert-deftest launcher-osx-dictionary-open-encodes-phrases ()
+  (launcher-osx-dictionary-test--with
+    (with-current-buffer (launcher-osx-dictionary--render "ice cream 中文&?#" "Definition")
+      (let (command)
+        (cl-letf (((symbol-function 'make-process)
+                   (lambda (&rest args) (setq command (plist-get args :command))))
+                  ((symbol-function 'executable-find) (lambda (_) "/fake/open")))
+          (call-interactively (key-binding "o")))
+        (should (equal '("open" "dict://ice%20cream%20%E4%B8%AD%E6%96%87%26%3F%23")
+                       command))))))
+
 (ert-deftest launcher-osx-dictionary-result-keys ()
   (launcher-osx-dictionary-test--with
     (let ((buffer (launcher-osx-dictionary-lookup "hello")))
@@ -317,26 +374,36 @@ tools: run xcode-select --install"
         (should (eq 'launcher-osx-dictionary-quit (key-binding "q")))
         (should (eq 'launcher-osx-dictionary-search (key-binding "s")))
         (should (eq 'launcher-osx-dictionary-select-dictionary (key-binding "S")))
-        (should (eq 'osx-dictionary-open-dictionary.app (key-binding "o")))
-        (should (eq 'osx-dictionary-read-word (key-binding "r"))))
+        (should (eq 'launcher-osx-dictionary-open-dictionary (key-binding "o")))
+        (should (eq 'launcher-osx-dictionary-read-word (key-binding "r"))))
       ;; Only in this buffer: the package's keymap is unchanged.
       (should (eq 'osx-dictionary-quit (keymap-lookup osx-dictionary-mode-map "q")))
       (should (eq 'osx-dictionary-search-input (keymap-lookup osx-dictionary-mode-map "s")))
-      ;; In a launcher interaction, q and s go back to the query.
-      (let* ((backs 0)
-             (launcher--back-function (lambda () (cl-incf backs))))
-        (with-current-buffer buffer
-          (call-interactively (key-binding "q"))
-          (call-interactively (key-binding "s")))
-        (should (= 2 backs)))
       (should (equal '(("hello")) (launcher-osx-dictionary-test--calls))))))
 
-(ert-deftest launcher-osx-dictionary-keys-outside-an-interaction ()
+(ert-deftest launcher-osx-dictionary-result-keys-with-view-mode-hook ()
+  ;; A user's read-only hook must not let View mode intercept r.
+  (launcher-osx-dictionary-test--with
+    (let ((read-only-mode-hook (cons #'view-mode read-only-mode-hook)))
+      (with-current-buffer (launcher-osx-dictionary-lookup "hello")
+        (should buffer-read-only)
+        (should-not (bound-and-true-p view-mode))
+        (should (eq 'launcher-osx-dictionary-read-word (key-binding "r")))
+        ;; Reused buffers can have View mode enabled between lookups.
+        (view-mode 1)
+        (should (eq 'isearch-backward (key-binding "r")))
+        (launcher-osx-dictionary-lookup "world")
+        (should buffer-read-only)
+        (should-not view-mode)
+        (should (eq 'launcher-osx-dictionary-read-word (key-binding "r")))))))
+
+(ert-deftest launcher-osx-dictionary-result-commands ()
   ;; q quits the window it was shown in, not the package's saved
-  ;; configuration; s and S look up again in this buffer, displaying
-  ;; nothing else.
+  ;; configuration; s searches through launcher and S selects dictionaries.
   (launcher-osx-dictionary-test--with
     (let ((origin (window-buffer))
+          (launcher-show-icons nil)
+          (launcher-tools '(("dict" :submit launcher-osx-dictionary-submit :name "Dictionary" :query launcher-osx-dictionary-query)))
           (buffer (launcher-osx-dictionary-lookup "hello")))
       (delete-other-windows)
       (save-window-excursion
@@ -347,21 +414,24 @@ tools: run xcode-select --install"
       (let ((saved osx-dictionary-previous-window-configuration))
         (pop-to-buffer buffer)
         (let ((layout (launcher-osx-dictionary-test--layout)))
-          (cl-letf (((symbol-function 'read-string)
-                     (lambda (prompt &rest _)
-                       (should (equal "Word (default hello): " prompt))
-                       "world"))
-                    ((symbol-function 'completing-read)
+          (let ((completing-read-function
+                 (launcher-test--reader
+                  (list (lambda ()
+                          (should (equal "dict " (buffer-string)))
+                          "dict world")))))
+            (cl-letf (((symbol-function 'launcher--entries) (lambda (&rest _) nil)))
+              (execute-kbd-macro "s")))
+          (should (equal "world" (buffer-local-value 'osx-dictionary--current-word buffer)))
+          (cl-letf (((symbol-function 'completing-read)
                      (lambda (_prompt collection &rest _)
                        (should (equal '("Fake Dictionary" "Other Dictionary"
                                         "All active dictionaries")
                                       collection))
                        "Other Dictionary")))
-            (execute-kbd-macro "s")
-            (should (equal "world" (buffer-local-value 'osx-dictionary--current-word buffer)))
             (execute-kbd-macro "S"))
           (should (equal "Other Dictionary" osx-dictionary-current-dictionary))
           (should (equal "world" (buffer-local-value 'osx-dictionary--current-word buffer)))
+          (should (equal "dict" (buffer-local-value 'launcher-osx-dictionary--result-prefix buffer)))
           (should (equal layout (launcher-osx-dictionary-test--layout)))
           (should-not (get-buffer "*osx-dictionary*")))
         (with-current-buffer buffer
@@ -372,53 +442,94 @@ tools: run xcode-select --install"
       (should (equal '(("hello") ("world") ("-l") ("-d" "Other Dictionary" "world"))
                      (launcher-osx-dictionary-test--calls))))))
 
-;;; Through the launcher
-
-(ert-deftest launcher-osx-dictionary-through-both-commands ()
-  ;; Under a configured prefix, the result shows in the launcher's
-  ;; window, where q returns to the query, or by ordinary display.
+(ert-deftest launcher-osx-dictionary-search-cancel-preserves-result ()
   (launcher-osx-dictionary-test--with
-    (let ((tools '(("w" :name "Dictionary" :prompt "Word: "
-                    :function launcher-osx-dictionary-lookup)))
-          shown)
-      (launcher-tools-test--with
-        (let ((launcher-tools tools))
-          (should (eq 'quit (launcher-tools-test--run
-                             #'launcher-buffer '(("w hello"))
-                             (list '("hello" (:key "RET"))
-                                   (list (lambda ()
-                                           (setq shown (launcher-buffer--session-shown
-                                                        launcher-buffer--session)))
-                                         'quit))
-                             "q")))
-          (should (memq (get-buffer launcher-osx-dictionary-buffer-name) shown))
-          (should (equal '(("" nil) ("hello" nil))
-                         (mapcar (lambda (query) (list (nth 1 query) (nth 3 query)))
-                                 (launcher-tools-test--events 'query))))
-          (should-not (launcher-tools-test--events 'launch))
-          (should-not (launcher-tools-test--events 'search))))
-      (launcher-tools-test--with
-        (let ((launcher-tools tools))
-          (should (eq 'accepted (launcher-tools-test--run
-                                 #'launcher '(("w hello")) '(("hello" (:key "RET"))))))
-          (should (equal launcher-osx-dictionary-buffer-name
-                         (buffer-name (window-buffer))))
-          (should-not (launcher-tools-test--events 'launch))
-          (should-not (launcher-tools-test--events 'search)))))
-    (should (equal '(("hello") ("hello")) (launcher-osx-dictionary-test--calls)))))
+    (let ((launcher-show-icons nil)
+          (launcher-tools '(("d" :name "Dictionary" :query launcher-osx-dictionary-query :submit launcher-osx-dictionary-submit)))
+          (completing-read-function (launcher-test--reader '(quit)))
+          (buffer (launcher-osx-dictionary-lookup "hello")))
+      (with-current-buffer buffer
+        (let ((before (buffer-string)))
+          (cl-letf (((symbol-function 'launcher--entries) (lambda (&rest _) nil)))
+            (should (eq 'quit (condition-case nil
+                                  (launcher-osx-dictionary-search)
+                                (quit 'quit)))))
+          (should (equal before (buffer-string)))
+          (should (equal "hello" osx-dictionary--current-word))))
+      (should (equal '(("hello")) (launcher-osx-dictionary-test--calls))))))
 
-(ert-deftest launcher-osx-dictionary-unknown-word-keeps-the-query ()
+(ert-deftest launcher-osx-dictionary-preview-reuses-text ()
   (launcher-osx-dictionary-test--with
-    (launcher-tools-test--with
-      (let ((launcher-tools '(("d" :name "Dictionary" :prompt "Word: "
-                               :function launcher-osx-dictionary-lookup))))
-        (should (eq 'quit (launcher-tools-test--run
-                           #'launcher-buffer '(("d qwxzv"))
-                           '(("qwxzv" (:key "RET")) quit))))
-        (should (equal '(("qwxzv" "Dictionary failed: No definition for \"qwxzv\" \
-\(searched: All active dictionaries)"))
-                       (cdr (mapcar (lambda (query) (list (nth 1 query) (nth 3 query)))
-                                    (launcher-tools-test--events 'query)))))
-        (should-not (launcher-tools-test--events 'search))))))
+    (let* ((layout (launcher-osx-dictionary-test--layout))
+           (result (car (launcher-osx-dictionary-query " hello "))))
+      (should (equal "hello" (plist-get result :title)))
+      (should (string-match-p "sense of hello" (plist-get result :subtitle)))
+      (should-not (get-buffer launcher-osx-dictionary-buffer-name))
+      (should (equal layout (launcher-osx-dictionary-test--layout)))
+      (let ((buffer (launcher-osx-dictionary-submit result)))
+        (should (buffer-live-p buffer))
+        (should (string-match-p "sense of hello" (with-current-buffer buffer (buffer-string)))))
+      (should (equal '(("hello")) (launcher-osx-dictionary-test--calls)))
+      (should-not (launcher-osx-dictionary-query " ")))))
+
+(ert-deftest launcher-osx-dictionary-preview-logs-only-selected-word ()
+  (launcher-osx-dictionary-test--with
+    (let* ((default-directory (file-name-as-directory launcher-osx-dictionary-test--dir))
+           (osx-dictionary-search-log-file "selected.log")
+           (log (expand-file-name osx-dictionary-search-log-file))
+           (candidate (car (launcher-osx-dictionary-query "hello"))))
+      (launcher-osx-dictionary-query "world")
+      (should-not (file-exists-p log))
+      ;; Actions run after the minibuffer closes, possibly in another directory.
+      (let ((default-directory temporary-file-directory))
+        (launcher-osx-dictionary-submit candidate))
+      (should (equal "hello\n" (with-temp-buffer (insert-file-contents log) (buffer-string))))
+      (should (equal '(("hello") ("world")) (launcher-osx-dictionary-test--calls))))))
+
+(ert-deftest launcher-osx-dictionary-preview-leaves-old-result-alone ()
+  (launcher-osx-dictionary-test--with
+    (let* ((buffer (launcher-osx-dictionary-lookup "hello"))
+           (before (with-current-buffer buffer (buffer-string)))
+           (result (car (launcher-osx-dictionary-query "world"))))
+      (should (equal before (with-current-buffer buffer (buffer-string))))
+      (launcher-osx-dictionary-submit result)
+      (should (string-match-p "sense of world" (with-current-buffer buffer (buffer-string))))
+      (should (equal '(("hello") ("world")) (launcher-osx-dictionary-test--calls))))))
+
+(ert-deftest launcher-osx-dictionary-preview-through-launcher ()
+  (launcher-osx-dictionary-test--with
+    (let ((launcher--apps nil) (launcher-show-icons nil)
+          (launcher-tools '(("d" :submit launcher-osx-dictionary-submit :name "Dictionary" :query launcher-osx-dictionary-query)))
+          (completing-read-function (launcher-test--reader '("d hello"))))
+      (cl-letf (((symbol-function 'launcher--entries) (lambda (&rest _) nil)))
+        (launcher))
+      (should (equal launcher-osx-dictionary-buffer-name (buffer-name (window-buffer))))
+      (should (equal '(("hello")) (launcher-osx-dictionary-test--calls))))))
+
+(ert-deftest launcher-osx-dictionary-search-retains-originating-prefix ()
+  (launcher-osx-dictionary-test--with
+    (let ((launcher-show-icons nil)
+          (launcher-tools '(("d" :submit launcher-osx-dictionary-submit :name "Dictionary" :query launcher-osx-dictionary-query)
+                            ("dict" :submit launcher-osx-dictionary-submit :name "Dictionary" :query launcher-osx-dictionary-query)))
+          (completing-read-function (launcher-test--reader '("dict hello"))))
+      (cl-letf (((symbol-function 'launcher--entries) (lambda (&rest _) nil)))
+        (launcher)
+        (with-current-buffer launcher-osx-dictionary-buffer-name
+          (should (equal "dict" launcher-osx-dictionary--result-prefix))
+          (let ((completing-read-function
+                 (launcher-test--reader
+                  (list (lambda ()
+                          (should (equal "dict " (buffer-string)))
+                          (signal 'quit nil))))))
+            (should (eq 'quit (condition-case nil
+                                  (launcher-osx-dictionary-search)
+                                (quit 'quit))))))))))
+
+(ert-deftest launcher-osx-dictionary-result-actions-without-word ()
+  (with-temp-buffer
+    (dolist (command '(launcher-osx-dictionary-read-word
+                       launcher-osx-dictionary-open-dictionary
+                       launcher-osx-dictionary-select-dictionary))
+      (should-error (call-interactively command) :type 'user-error))))
 
 ;;; launcher-osx-dictionary-tests.el ends here

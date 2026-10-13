@@ -10,8 +10,9 @@
 ;;
 ;;   (require 'launcher-osx-dictionary)
 ;;   (setq launcher-tools
-;;         '(("d" :name "Dictionary" :prompt "Word: "
-;;                 :function launcher-osx-dictionary-lookup)))
+;;         '(("d" :name "Dictionary"
+;;                 :query launcher-osx-dictionary-query :debounce 0.2
+;;                 :submit launcher-osx-dictionary-submit)))
 ;;
 ;; Loading this file loads neither osx-dictionary nor its helper; the
 ;; first lookup does, and reports what is missing instead of looking up.
@@ -29,6 +30,7 @@
 
 (require 'launcher)
 (require 'nadvice)
+(require 'url-util)
 
 (defvar osx-dictionary-cli)
 (defvar osx-dictionary--load-dir)
@@ -47,12 +49,27 @@ launcher leave the package's own session alone."
   :type 'string
   :group 'launcher)
 
-(defconst launcher-osx-dictionary--interface
+(defconst launcher-osx-dictionary--functions
   '(osx-dictionary-mode osx-dictionary--insert-search-result
-    osx-dictionary--current-dictionary-description osx-dictionary-select-dictionary
-    osx-dictionary-cli osx-dictionary--load-dir osx-dictionary--current-word
+    osx-dictionary--current-dictionary-description osx-dictionary-select-dictionary)
+  "Functions of osx-dictionary this file uses.")
+
+(defconst launcher-osx-dictionary--variables
+  '(osx-dictionary-cli osx-dictionary--load-dir osx-dictionary--current-word
     osx-dictionary-current-dictionary)
-  "Functions and variables of osx-dictionary this file uses.")
+  "Variables of osx-dictionary this file uses.")
+
+(defvar-local launcher-osx-dictionary--speech-process nil
+  "Speech process for this result buffer.")
+
+(defvar-local launcher-osx-dictionary--result-prefix nil
+  "Launcher tool prefix that produced the displayed result.")
+
+(defun launcher-osx-dictionary--query-prefix ()
+  "Return the prefix of the active launcher query, if any."
+  (when launcher--query-session
+    (when-let* ((route (launcher--query-session-route launcher--query-session)))
+      (launcher--tool-prefix (car route)))))
 
 (defun launcher-osx-dictionary--require ()
   "Load osx-dictionary, or signal an error saying what is missing."
@@ -60,9 +77,8 @@ launcher leave the package's own session alone."
     (error "Apple dictionaries are only available on macOS"))
   (unless (require 'osx-dictionary nil t)
     (error "Needs the osx-dictionary package: M-x package-install RET osx-dictionary"))
-  (when-let* ((missing (seq-remove (lambda (symbol)
-                                     (or (fboundp symbol) (boundp symbol)))
-                                   launcher-osx-dictionary--interface)))
+  (when-let* ((missing (append (seq-remove #'fboundp launcher-osx-dictionary--functions)
+                              (seq-remove #'boundp launcher-osx-dictionary--variables))))
     (error "This osx-dictionary lacks %s; launcher-osx-dictionary was tested with commit 655bca5"
            (mapconcat #'symbol-name missing ", "))))
 
@@ -142,34 +158,85 @@ Signal an error if it finds none."
   :doc "Keys of launcher's dictionary results, over `osx-dictionary-mode-map'."
   "q" #'launcher-osx-dictionary-quit
   "s" #'launcher-osx-dictionary-search
-  "S" #'launcher-osx-dictionary-select-dictionary)
+  "S" #'launcher-osx-dictionary-select-dictionary
+  "r" #'launcher-osx-dictionary-read-word
+  "o" #'launcher-osx-dictionary-open-dictionary)
 
 (define-minor-mode launcher-osx-dictionary-result-mode
   "Minor mode of launcher's dictionary results.
 It replaces the `osx-dictionary-mode' keys that would display the
 package's own buffer, or restore the window configuration it saved,
-in this buffer only:
+in this buffer only, and provides asynchronous speech and URL opening:
 \\{launcher-osx-dictionary-result-mode-map}"
   :lighter nil)
 
-(defun launcher-osx-dictionary--render (word text)
+(defun launcher-osx-dictionary--render (word text &optional prefix)
   "Show TEXT, the definitions of WORD, in the result buffer and return it.
-Display nothing."
+Display nothing.  Remember the originating tool PREFIX for further searches."
   (let ((buffer (get-buffer-create launcher-osx-dictionary-buffer-name)))
     (with-current-buffer buffer
       (unless (derived-mode-p 'osx-dictionary-mode)
         (osx-dictionary-mode))
+      ;; User hooks can enable View mode for read-only buffers.  Its
+      ;; minor-mode map shadows dictionary keys (notably r with backward
+      ;; isearch); the dictionary mode already provides read-only results.
+      (when (bound-and-true-p view-mode)
+        (view-mode -1))
+      (launcher-osx-dictionary--stop-speech)
+      (add-hook 'kill-buffer-hook #'launcher-osx-dictionary--stop-speech nil t)
+      ;; These generated results have no edits to undo or save.
+      (setq buffer-undo-list t)
       (let ((inhibit-read-only t))
         (erase-buffer)
         (insert text))
+      (setq buffer-read-only t)
+      (set-buffer-modified-p nil)
       ;; For the package's commands that act on the word, such as `o'.
       (setq osx-dictionary--current-word word)
+      (setq launcher-osx-dictionary--result-prefix prefix)
       (launcher-osx-dictionary-result-mode 1)
       (goto-char (point-min))
       (dolist (window (get-buffer-window-list buffer nil t))
         (set-window-point window (point-min))
         (set-window-start window (point-min))))
     buffer))
+
+(defun launcher-osx-dictionary--text (word &optional preview)
+  "Return definitions for trimmed WORD without changing a result buffer.
+With PREVIEW, leave the package's search log untouched."
+  (launcher-osx-dictionary--require)
+  (let* ((osx-dictionary-search-log-file
+          (and (not preview) osx-dictionary-search-log-file
+               (expand-file-name osx-dictionary-search-log-file)))
+         (default-directory (file-name-as-directory osx-dictionary--load-dir)))
+    (launcher-osx-dictionary--search word)))
+
+;;;###autoload
+(defun launcher-osx-dictionary-query (query)
+  "Return a definition preview for QUERY, without displaying or rendering a buffer.
+Use this as a tool's :query with :debounce 0.2.  Selecting the candidate
+renders the captured definitions without looking the word up again."
+  (let ((word (string-trim query)))
+    (unless (string-empty-p word)
+      (let* ((prefix (launcher-osx-dictionary--query-prefix))
+             (text (launcher-osx-dictionary--text word t))
+             (log-file (and osx-dictionary-search-log-file
+                            (expand-file-name osx-dictionary-search-log-file)))
+             (summary (truncate-string-to-width
+                       (string-join (split-string (substring-no-properties text) "[[:space:]]+" t) " ")
+                       160 nil nil "…")))
+        (list (list :id word :title word :subtitle summary
+                    :data (list :word word :text text :prefix prefix :log-file log-file)))))))
+
+;;;###autoload
+(defun launcher-osx-dictionary-submit (candidate)
+  "Render CANDIDATE's captured definition without another lookup."
+  (let* ((data (plist-get candidate :data))
+         (word (plist-get data :word))
+         (log-file (plist-get data :log-file)))
+    (when log-file (append-to-file (concat word "\n") nil log-file))
+    (launcher-osx-dictionary--render word (plist-get data :text)
+                                    (plist-get data :prefix))))
 
 ;;;###autoload
 (defun launcher-osx-dictionary-lookup (query)
@@ -188,35 +255,80 @@ does the lookup."
   (let ((word (string-trim query)))
     (when (string-empty-p word)
       (error "Nothing to look up"))
-    (launcher-osx-dictionary--require)
-    ;; The package runs its helper through a shell in this directory,
-    ;; which must be local.  A relative search log stays the caller's.
-    (let* ((osx-dictionary-search-log-file
-            (and osx-dictionary-search-log-file
-                 (expand-file-name osx-dictionary-search-log-file)))
-           (default-directory (file-name-as-directory osx-dictionary--load-dir)))
-      (launcher-osx-dictionary--render word (launcher-osx-dictionary--search word)))))
+    (launcher-osx-dictionary--render word (launcher-osx-dictionary--text word)
+                                     (launcher-osx-dictionary--query-prefix))))
 
 (defun launcher-osx-dictionary-quit ()
-  "Leave this dictionary result.
-In a launcher interaction, return to its query, as `launcher-back'.
-Otherwise quit the window as `quit-window' does, instead of restoring
-the window configuration osx-dictionary saved for its own buffer."
+  "Quit the result window without restoring the package's saved layout."
   (interactive)
-  (if launcher--back-function
-      (launcher-back)
-    (quit-window)))
+  (launcher-osx-dictionary--stop-speech)
+  (quit-window))
+
+(defun launcher-osx-dictionary--stop-speech ()
+  "Stop any speech belonging to this result buffer."
+  (when (and (processp launcher-osx-dictionary--speech-process)
+             (process-live-p launcher-osx-dictionary--speech-process))
+    (delete-process launcher-osx-dictionary--speech-process))
+  (setq launcher-osx-dictionary--speech-process nil))
+
+(defun launcher-osx-dictionary--word ()
+  "Return the displayed query, or report that there is no result."
+  (unless (and (boundp 'osx-dictionary--current-word)
+               (stringp osx-dictionary--current-word)
+               (not (string-blank-p osx-dictionary--current-word)))
+    (user-error "No dictionary word to act on"))
+  osx-dictionary--current-word)
+
+(defun launcher-osx-dictionary-read-word ()
+  "Read the displayed word asynchronously; repeated calls restart speech."
+  (interactive)
+  (let ((word (launcher-osx-dictionary--word)))
+    (unless (executable-find "say")
+      (user-error "The macOS speech command `say' is unavailable"))
+    (launcher-osx-dictionary--stop-speech)
+    (setq launcher-osx-dictionary--speech-process
+          (make-process :name "launcher-dictionary-speech" :buffer nil
+                        :command '("say" "-f" "-") :connection-type 'pipe
+                        :coding 'utf-8-unix :noquery t
+                        :sentinel (lambda (process _event)
+                                    (when (and (eq (process-status process) 'exit)
+                                               (not (zerop (process-exit-status process))))
+                                      (message "Dictionary speech failed (%s)"
+                                               (process-exit-status process))))))
+    (process-send-string launcher-osx-dictionary--speech-process (concat word "\n"))
+    (process-send-eof launcher-osx-dictionary--speech-process)))
+
+(defun launcher-osx-dictionary-open-dictionary ()
+  "Open the displayed word or phrase in Dictionary.app."
+  (interactive)
+  (let ((word (launcher-osx-dictionary--word)))
+    (unless (executable-find "open")
+      (user-error "The macOS command `open' is unavailable"))
+    (make-process :name "launcher-dictionary-open" :buffer nil :noquery t
+                  :sentinel (lambda (process _event)
+                              (when (and (eq (process-status process) 'exit)
+                                         (not (zerop (process-exit-status process))))
+                                (message "Opening Dictionary.app failed (%s)"
+                                         (process-exit-status process))))
+                  :command (list "open" (concat "dict://" (url-hexify-string word))))))
 
 (defun launcher-osx-dictionary-search ()
-  "Look up another word.
-In a launcher interaction, return to its query to edit the word, as
-`launcher-back'.  Otherwise read a word and show it in this buffer."
+  "Return to launcher with the configured dictionary prefix ready for input."
   (interactive)
-  (if launcher--back-function
-      (launcher-back)
-    (launcher-osx-dictionary-lookup
-     (read-string (format-prompt "Word" osx-dictionary--current-word)
-                  nil nil osx-dictionary--current-word))))
+  (let* ((tools (seq-filter
+                 (lambda (tool)
+                   (and (launcher--tool-prefix tool)
+                        (or (eq (launcher--tool-query tool) #'launcher-osx-dictionary-query)
+                            (eq (launcher--tool-submit tool) #'launcher-osx-dictionary-submit))))
+                 (launcher--tools)))
+         (tool (or (seq-find (lambda (tool)
+                              (equal (launcher--tool-prefix tool)
+                                     launcher-osx-dictionary--result-prefix))
+                            tools)
+                   (car tools))))
+    (unless tool
+      (user-error "Configure a prefixed dictionary tool in `launcher-tools' first"))
+    (launcher nil (concat (launcher--tool-prefix tool) " "))))
 
 (defun launcher-osx-dictionary-select-dictionary ()
   "Choose the dictionaries to search, then look this word up again here.
@@ -224,15 +336,15 @@ Prompt as `osx-dictionary-select-dictionary', which saves the choice
 for later lookups, but show the word in this buffer, not in the
 package's own."
   (interactive)
-  (let* ((word osx-dictionary--current-word)
+  (let* ((word (launcher-osx-dictionary--word))
+         (prefix launcher-osx-dictionary--result-prefix)
          (default-directory (file-name-as-directory osx-dictionary--load-dir))
          (args (advice-eval-interactive-spec
                 (cadr (interactive-form #'osx-dictionary-select-dictionary)))))
     ;; Outside its mode, the command does not show the word itself.
     (with-temp-buffer
       (apply #'osx-dictionary-select-dictionary args))
-    (when word
-      (launcher-osx-dictionary-lookup word))))
+    (launcher-osx-dictionary--render word (launcher-osx-dictionary--text word) prefix)))
 
 (provide 'launcher-osx-dictionary)
 ;;; launcher-osx-dictionary.el ends here

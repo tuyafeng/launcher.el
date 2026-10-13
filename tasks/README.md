@@ -1,5 +1,9 @@
 # Launcher implementation tasks
 
+The full-buffer entry point and its interaction lifecycle were removed on
+2026-10-12. Only `launcher` remains. The tasks and evidence below are historical
+records; their buffer-entry configuration examples no longer apply.
+
 Planning only: every task starts at `status: todo`. Proposed names/configuration
 are contracts for implementation, not features already available. Use one Markdown
 file per task, stable kebab-case `id`, `status: todo|done`, and `depends_on` containing
@@ -51,7 +55,7 @@ are explicit checklist gates in the final configuration task, not invalid local
 
   ```elisp
   (setq launcher-tools
-        '(("d" :name "Dictionary" :prompt "Word: "
+        '(("d" :name "Dictionary"
                 :function launcher-osx-dictionary-lookup)))
   ```
 

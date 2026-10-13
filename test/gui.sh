@@ -1,6 +1,6 @@
 #!/bin/sh
 # GUI ONLY, in the test VM: bash test/vm.sh sh test/gui.sh [SELECTOR]
-# Runs the graphical checks of launcher-buffer, of tool routing and of
+# Runs the graphical checks of minibuffer completion, of tool routing and of
 # app icons in a disposable Emacs without Portal or a user init, typing
 # through AppKit's event queue.  The real Apple Dictionary checks are opt-in:
 # bash test/vm.sh sh test/gui.sh '^launcher-dictionary-real-'.
@@ -21,6 +21,7 @@ mkdir -p "$LAUNCHER_TEST_SCREENSHOTS"
     -L "$elpa/orderless-1.8" -L "$elpa/marginalia-2.13" \
     --eval '(module-load (expand-file-name ".cache/native-input.dylib"
                                          (getenv "LAUNCHER_TEST_ROOT")))' \
+    -l "$root/test/launcher-gui-tests.el" \
     -l "$root/test/launcher-tools-gui-tests.el" \
     -l "$root/test/launcher-osx-dictionary-gui-tests.el" \
     -l "$root/test/launcher-icons-gui-tests.el" \
