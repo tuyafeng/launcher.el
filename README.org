@@ -1,425 +1,330 @@
 #+TITLE: launcher.el
 
-Launch macOS applications from Emacs.
+A macOS launcher for Emacs. Open apps, preview calculations, search the web,
+and run custom tools from the minibuffer.
 
-[[./assets/screenshot.png]]
+This is a fork of [[https://github.com/xiaoxinghu/launcher.el][xiaoxinghu/launcher.el]]. Thanks to Xiaoxing Hu for the original
+project. This version has diverged substantially: apps, searches, and custom
+actions now use the same tool interface, with live previews and native app icons.
 
-* Installation
+[[file:assets/screenshot.png]]
+
+* Install and launch
+
+Install this fork with ~use-package~ and ~package-vc~:
 
 #+begin_src emacs-lisp
 (use-package launcher
-  :vc (:url "https://github.com/xiaoxinghu/launcher.el" :rev :newest)
-  :bind ("C-c l" . launcher))
+  :vc (:url "https://github.com/tuyafeng/launcher.el"
+       :branch "develop" :rev :newest)
+  :bind ("C-c l" . launcher)
+  :custom
+  (launcher-app-discovery-method 'filesystem))
 #+end_src
 
-* Usage
-
-- ~M-x launcher~ — pick and launch an app
-- ~C-u M-x launcher~ — rebuild index first
-- ~M-x launcher-refresh~ — rebuild index without launching
-
-Empty input shows only the input box.  Type to see matching applications,
-calculations, custom tool results and web searches.  Return executes the
-selected result; blank input cancels.  Results stay in tool order:
-applications, calculator, then your ~launcher-tools~ in list order.
-
-- ~c~ searches the cached app index, using your completion styles.
-- ~1 + 2 * 3~ previews ~= 7~; Return copies the value and closes the launcher.
-  Calculations use Emacs' built-in Calc syntax: powers (~2^3~), modulo
-  (~10%3~), percentages (~20%~), scientific notation (~1e3+2~), functions
-  (~sqrt(9)~, ~sin(30)~), fractions (~1:3+1:6~), complex numbers (~(1,2)~)
-  and vectors (~[1,2]+[3,4]~) are recognized automatically when they produce
-  constant results.  Implicit multiplication is supported: ~2(3+4)~ is ~14~.
-  Multiplication, division and modulo have equal precedence and run left to
-  right, so ~8/2*2~ is ~8~.  Powers associate right to left: ~2^3^2~ is ~512~.
-  Calc can fill in missing closing parentheses: ~(1+2~ is ~3~.
-  Calc uses fixed default modes (12-digit precision and angles in degrees),
-  independent of your current Calc settings.  Bare decimal numbers do not
-  trigger calculation; ~= 42~ explicitly requests one.  Failed simple
-  arithmetic or any failed input beginning with ~=~ keeps a calculation
-  candidate showing ~= INVALID~, so default search does not appear between
-  arithmetic keystrokes.  Failed complex expressions such as ~sqrt(~ or ~[1,~
-  continue normal search unless prefixed with ~=~.  Return on INVALID keeps
-  the input and copies nothing; unresolved symbolic formulas are not results.
-- ~g~ offers the default Google search entry alongside matching applications.
-  Selecting it fills ~g ~ and keeps the input open.  A prefix followed by only
-  whitespace shows the tool's prefix and name without querying; selecting it
-  keeps the input unchanged.
-  ~g emacs~ previews a Google search, executed on Return.
-- In general search, if all tools return no candidates, Launcher offers one default web search
-  (~launcher-fallback-search-url~).  Input starting with ~http://~ or ~https://~
-  (ignoring case) instead shows ~Open URL:~ and opens the input unchanged.
-  Bare domains still use web search.  Any tool result removes this fallback;
-  each search engine is an ordinary prefixed tool in ~launcher-tools~.
-
-Space inserts text under stock completion; custom Space bindings are kept.
-Tab opens stock completion choices; with Vertico, Tab inserts a result's
-visible title, preserving the active tool prefix (for example, ~quit Finder~).
-Prefix entries insert their prefix plus a space.  Only a current result can
-execute: arbitrary text returned by a custom completion reader is not dispatched
-as an action.
-
-** Application discovery
-
-~launcher-app-discovery-method~ selects how apps are found:
-
-- ~spotlight~ (default): query Spotlight with ~launcher-mdfind-query~.
-- ~filesystem~: recursively scan ~launcher-app-directories~ without
-  entering ~.app~ bundles, so their internal helper apps are excluded.
+Alternatively, clone the repository and load it directly:
 
 #+begin_src emacs-lisp
-(setq launcher-app-discovery-method 'filesystem) ; or 'spotlight
+(add-to-list 'load-path "/path/to/launcher.el")
+(require 'launcher)
+(global-set-key (kbd "C-c l") #'launcher)
 #+end_src
 
-Both sources use ~launcher-app-directories~.  The filesystem scanner skips
-missing directories and reports unreadable directories before continuing.
-It follows explicitly configured roots, including symlinks, but does not
-recurse into directory symlinks encountered below them.  Symlinks to valid
-~.app~ directories are included.  Different paths to the same target remain
-distinct; deduplication does not resolve symlinks.
+Include ~assets/launcher-icons.js~ when installing; it provides native app icons.
+Launcher uses your existing completion UI and styles. Vertico, Orderless and
+nerd-icons are optional.
 
-The application list is cached in memory for the Emacs session.  After
-changing discovery settings or installing/removing apps, run
-~M-x launcher-refresh~ (or ~C-u M-x launcher~) to rebuild it.
-~launcher-mdfind-query~ only affects Spotlight discovery; filesystem mode
-does not require ~mdfind~.
+| Command                         | What it does                     |
+|---------------------------------+----------------------------------|
+| ~M-x launcher~ / ~C-c l~        | Open the launcher                |
+| ~M-x launcher-refresh~          | Refresh the app index            |
+| ~M-x launcher-clear-icon-cache~ | Regenerate app icons on next use |
 
-** App icons
+Type to see results, press ~RET~ to run the selected action, or ~C-g~ to cancel.
+Blank input shows no results. With Vertico, ~TAB~ inserts the selected title or
+tool prefix. With Emacs's default completion UI, it shows the available choices.
 
-On macOS, in a graphical frame, both commands show each app's own icon
-before its name, as macOS draws it.  In a terminal, or with
-~(setq launcher-show-icons nil)~, the list is text only.
+- ~emacs~ finds applications using your completion styles.
+- ~1 + 2 * 3~ previews ~7~; ~RET~ copies the value. Calc syntax such as
+  ~sqrt(9)~ and ~2^3~ works too. Prefix a number with ~=~ to calculate it: ~= 42~.
+- ~g emacs~ searches Google. Selecting the ~g~ entry inserts ~g ~ first.
+- ~https://example.org~ offers to open the URL if no tool matches.
+- Any other input with no matches offers a web search.
 
-- Icons come from AppKit (~NSWorkspace iconForFile:~), through macOS's
-  built-in ~osascript~ and the packaged script ~assets/launcher-icons.js~:
-  no compiler, Homebrew package, Python or icon font.  Install that file
-  with the package (~package-vc~ does; a MELPA-style recipe needs
-  ~:files ("*.el" "assets/launcher-icons.js")~).
-- Missing icons are drawn in the background, all at once, and never slow
-  typing: an app whose icon is not ready yet shows blank space as large,
-  and its icon appears when the list is next redrawn.  Drawing 500 apps'
-  icons takes a few seconds, once.
-- Image icons and blank slots follow the current buffer's default font
-  height, including font remapping but excluding extra line spacing.
-  There is no separate icon size setting.  Cached icons stay sharp up to
-  32 logical pixels on a Retina display.
-- Icons are cached as 64-pixel PNGs in the ~v1~ subdirectory of
-  ~launcher-icon-cache-directory~ (~cache/launcher/icons/~ in your Emacs
-  directory), and survive restarts.
-  A PNG is named after its app's path and its ~Info.plist~'s modification
-  time, so an updated app gets a new icon.  ~C-u M-x launcher~ and
-  ~M-x launcher-refresh~ delete the icons of apps that are gone.  An icon
-  that changes without its ~Info.plist~, such as a custom Finder icon,
-  goes unnoticed: ~M-x launcher-clear-icon-cache~ deletes all icons, which
-  are then drawn again.  The launcher deletes only the PNGs it made.
-- If an icon cannot be drawn, the app is listed and launched as usual; the
-  failure is noted in the hidden buffer ~" *launcher-icons*"~ and tried
-  again after the next index refresh.
-- With icons, the result list's completion category is ~launcher-result~, so
-  that add-ons such as ~nerd-icons-completion~ add no generic icon of
-  their own; Marginalia and Vertico work as before.
+* Settings worth knowing
 
-Custom tools can reuse an application icon with
-~:icon (launcher-icons-app "Finder")~, or supply their own image with
-~:icon '(:file "/path/to/icon.png")~ or text with
-~:icon (nerd-icons-faicon "nf-fa-trash")~.  Launcher does not require nerd-icons.
-~launcher-icons-app~ accepts an application path or an exact, case-sensitive
-name from the cached app index.  Unknown or ambiguous names return nil.
-It returns ~(:file CACHE-PNG-PATH)~ even before the PNG exists, without
-discovering apps or starting a worker.  Existing background generation makes
-indexed app icons available on a later redraw.  Custom images are never deleted
-by Launcher's cache cleanup.  Migrate former ~:icon-path APP-PATH~ fields to
-~:icon (launcher-icons-app APP-PATH)~; ~:icon-path~ is no longer supported.
+Use ~M-x customize-group RET launcher RET~ to browse all options.
 
-** Completion
+| Option                          | Purpose / default                                                   |
+|---------------------------------+---------------------------------------------------------------------|
+| ~launcher-app-discovery-method~ | ~spotlight~ by default; ~filesystem~ scans app directories directly |
+| ~launcher-app-directories~      | App search roots; includes system and user Applications directories |
+| ~launcher-tools~                | Your tools; includes Google (~g~) by default                        |
+| ~launcher-fallback-search-url~  | Search URL when no tool matches; Google by default                  |
+| ~launcher-show-icons~           | Show icons in graphical frames; ~t~                                 |
+| ~launcher-builtin-icons~        | Optional icons for ~calculator~, ~search~ and ~url~; ~nil~          |
 
-~launcher~ uses your ~completing-read-function~ and completion UI.  Vertico
-is optional.  Your completion styles apply to app matching, and your UI's
-sorting and navigation apply to candidates.
+Use ~filesystem~ if Spotlight misses apps. Run ~launcher-refresh~ after changing
+the search directories or discovery method, or adding or removing apps.
+App icons are generated in the background and cached across Emacs restarts.
 
-Result subtitles use the standard ~completions-annotations~ face and start
-in a shared column, with or without icons.  The column is calculated from
-visible names (in pixels in a graphical frame, in columns in a terminal),
-leaves a two-space gap, and grows in four-space steps.  It does not shrink
-while filtering within one launcher session; reopening the launcher or
-changing window/font metrics recalculates it.  The name area is limited to
-40 character columns (including icons and spacing), converted to pixels
-using the current font in graphical frames.  Narrow windows reduce this
-limit to leave ten columns for annotations.  Long names and subtitles
-are shortened with an ellipsis for display only, preserving the full name
-and action.  Truncated names
-also retain their full title as hover text.  Stock ~*Completions*~ uses a
-single column during Launcher; your global completion layout is unchanged.
-No Marginalia installation is needed for this layout.
-
-Completion styles can interpret special characters.  With Orderless 1.8's
-default configuration, ~!~ alone is ignored and shows all applications;
-~!chro~ excludes applications matching ~chro~, such as Chrome and Chromium.
-~chro~ matches those applications, while =~crm= uses fuzzy matching and can
-match Chromium.  The available syntax depends on your Orderless version and
-configuration.  A complete tool prefix followed by a space routes the remaining
-input to that tool; search engines receive the query text unchanged.
-
-Successful actions record stable candidate IDs in ~launcher-selection-history~,
-separately from query text history.  With Vertico, a history-aware sorter such as
-~vertico-sort-history-alpha~ can prioritize recent selections.  Add
-~launcher-selection-history~ to ~savehist-additional-variables~ to persist them.
-Renaming a tool or changing its prefix changes its candidate IDs.
-
-** Built-in icons
-
-~launcher-builtin-icons~ (default nil) is an alist for ~calculator~, ~search~
-and ~url~ icons.  ~calculator~ covers valid and invalid calculations; ~search~
-covers fallback web searches and search tools without their own icon; ~url~
-covers directly opening a URL.  Missing entries show blank icon slots.
+With ~nerd-icons~ loaded, configure calculator, search and URL icons:
 
 #+begin_src emacs-lisp
-(setq launcher-builtin-icons
-      (when (featurep 'nerd-icons)
+(when (featurep 'nerd-icons)
+  (setq launcher-builtin-icons
         `((calculator . ,(nerd-icons-faicon "nf-fa-calculator"))
           (search     . ,(nerd-icons-faicon "nf-fa-search"))
           (url        . ,(nerd-icons-faicon "nf-fa-link")))))
 #+end_src
 
-Load ~nerd-icons~ before evaluating this example to configure the icons.
+Search tools without their own icon use the shared search icon.
 
-Values use the existing icon formats: nil, a string (with text properties),
-or ~(:file PNG-PATH)~.  Launcher does not require nerd-icons.
-Tools and candidates may use ~:icon '(:builtin KEY)~ to reference one of these
-three icons.  References resolve when displayed, so changing the alist also
-updates previously configured tools.  Alist values cannot themselves reference
-another built-in icon.  Ordinary tools and candidates still use explicit nil
-or ~""~ for a blank icon, and application icons continue to come from macOS.
+To remove the default Google tool:
 
-** Tools
+#+begin_src emacs-lisp
+(setq launcher-tools
+      (cl-remove "g" launcher-tools :key #'car :test #'equal))
+#+end_src
 
-~launcher-tools~ configures tools after the built-in applications and calculator.
-It defaults to the Google (~g~) search tool.
-~setq~ replaces the entire list, including those defaults; setting it to ~nil~
-removes all configured tools.  Applications, calculator and the unprefixed
-fallback controlled by ~launcher-fallback-search-url~ remain available.
+Configure tools after loading Launcher, in ~:config~ or
+~(with-eval-after-load 'launcher ...)~. To save recent selections across restarts:
 
-~launcher-search-tool~ constructs an ordinary tool entry without changing
-~launcher-tools~.  Supply a nonempty prefix without whitespace, a nonblank
-~:name~, a nonblank ~:url~ template and an optional ~:icon~.  The template uses
-Emacs format-string syntax: ~%s~ receives the URL-encoded query and ~%%~ is a
-literal percent sign.  Blank queries show the prefix entry; selecting a search
-result opens its URL.  An omitted or nil ~:icon~ uses the shared ~search~ icon
-from ~launcher-builtin-icons~.  An explicit icon overrides it; ~:icon ""~ keeps
-that search tool's icon blank.
+#+begin_src emacs-lisp
+(with-eval-after-load 'savehist
+  (add-to-list 'savehist-additional-variables 'launcher-selection-history))
+(savehist-mode 1)
+#+end_src
 
-To add a search tool while keeping the current list:
+* Define a tool
+
+A tool defines the results (candidates) to show and what to do when one is selected:
+
+#+begin_src emacs-lisp
+("prefix" :name "Tool name"
+          :candidates my-candidates  ; List, or a function taking no arguments
+          :query my-query           ; Function taking the query string
+          :submit my-submit         ; Function taking the selected candidate
+          :debounce 0.2             ; Optional delay for :query, in seconds
+          :icon "...")              ; Optional icon, inherited by candidates
+#+end_src
+
+Use ~:candidates~, ~:query~, or both, and provide ~:submit~ to handle selections.
+Prefixes must be unique and contain no whitespace. Use ~nil~ or ~""~ for a tool
+that runs in general searches without a prefix.
+
+Typing ~prefix text~ queries only that tool, passing ~text~ unchanged. Typing
+~prefix ~ shows all static candidates without calling ~:query~.
+
+| Property      | How it works                                                           |
+|---------------+------------------------------------------------------------------------|
+| ~:candidates~ | Loaded once per launcher session; titles filtered by completion styles |
+| ~:query~      | Called as input changes; returns results without further filtering     |
+| ~:submit~     | Runs when the user confirms a selection                                |
+| ~:debounce~   | Delays dynamic queries; default 0. Queries still run synchronously     |
+| ~:icon~       | Optional icon for the tool prefix and its candidates                   |
+
+Each candidate is a property list (plist):
+
+#+begin_src emacs-lisp
+(:id unique-id :title "Visible title" :subtitle "Optional detail"
+ :icon "..." :data value)
+#+end_src
+
+~:id~ must be stable, non-nil, and unique within each source. ~:title~ must be a
+nonblank string. The other fields are optional; use ~:data~ for the action's
+arguments. If both sources return the same ID, the dynamic candidate takes precedence.
+
+Return ~nil~ from ~:submit~ after running an action. To display a result, return
+a live buffer or ~(:buffer BUFFER :action ACTION)~ for custom ~pop-to-buffer~
+behavior. The buffer opens after the minibuffer closes. Return ~(:input STRING)~
+to replace the input and keep the launcher open.
+
+Tools and candidates can set ~:icon~ to text, ~'(:file "/path/to/icon.png")~,
+~'(:builtin search)~, or ~(launcher-icons-app "Finder")~ to reuse an indexed
+app's icon. Candidates inherit the tool icon unless they specify their own.
+No icon font is required; nerd-icons strings such as
+~(nerd-icons-faicon "nf-fa-github")~ also work.
+
+* Common tools
+
+** Web search
+
+Add a search tool with ~launcher-search-tool~. In the URL template, ~%s~ is
+replaced with the URL-encoded query; ~%%~ inserts a literal percent sign.
 
 #+begin_src emacs-lisp
 (add-to-list 'launcher-tools
              (launcher-search-tool
-              "w" :name "Wikipedia"
-              :url "https://en.wikipedia.org/w/index.php?search=%s"
-              :icon "📚"))
+              "gh" :name "GitHub"
+              :url "https://github.com/search?q=%s"
+              :icon (when (featurep 'nerd-icons)
+                      (nerd-icons-faicon "nf-fa-github"))))
 #+end_src
 
-A tool has an optional prefix and icon, a required name, and three
-source/action properties:
-~:candidates~ supplies a static list, ~:query~ supplies dynamic results,
-and ~:submit~ executes the selected candidate.
+** Dictionary
+
+Install ~osx-dictionary~ and add the configuration below. Type ~d word~ to preview
+a definition, then press ~RET~ to see the full entry in another window. Press
+~q~ to close the result window.
 
 #+begin_src emacs-lisp
-(defun my-definition-query (query)
-  (unless (string-blank-p query)
-    (list (list :id query :title query :subtitle "Look up definition"
-                :data query))))
+(use-package osx-dictionary
+  :after launcher
+  :config
+  (defun my/dictionary-query (query)
+    "Return a dictionary preview candidate for QUERY."
+    (let ((word (string-trim query)))
+      (unless (string-empty-p word)
+        (require 'osx-dictionary)
+        ;; Keep incremental queries out of the search history.
+        (let* ((osx-dictionary-search-log-file nil)
+               (text (with-temp-buffer
+                       (osx-dictionary--insert-search-result word)
+                       (buffer-string))))
+          (list (list :id word :title word :data word
+                      :subtitle
+                      (truncate-string-to-width
+                       (string-join (split-string text) " ")
+                       160 nil nil "…")))))))
 
-(defun my-definition-submit (candidate)
-  (my-dictionary-lookup (plist-get candidate :data)))
+  (defun my/dictionary-submit (candidate)
+    "Prepare CANDIDATE for display in a temporary dictionary window."
+    (require 'osx-dictionary)
+    (let ((word (plist-get candidate :data)))
+      ;; Populate the native result buffer without keeping layout changes.
+      (save-window-excursion
+        (osx-dictionary--view-result word))
+      (let ((buffer (osx-dictionary--get-buffer word)))
+        (with-current-buffer buffer
+          ;; Disable conflicting View mode keys.
+          (when (bound-and-true-p view-mode)
+            (view-mode -1))
+          (use-local-map (copy-keymap (current-local-map)))
+          (local-set-key (kbd "q") #'quit-window))
+        (list :buffer buffer
+              :action
+              '((display-buffer-reuse-window display-buffer-pop-up-window)
+                (inhibit-same-window . t))))))
 
-(setq launcher-tools
-      (list
-       (launcher-search-tool "gh" :name "GitHub"
-                             :url "https://github.com/search?q=%s" :icon "🔎")
-       '("d" :name "Dictionary" :icon "📖" :query my-definition-query
-             :submit my-definition-submit :debounce 0.2)
-       '("fav" :name "Favorites"
-               :candidates ((:id emacs :title "Emacs" :data "https://www.gnu.org/software/emacs/"))
-               :submit my-favorite-submit)))
+  (add-to-list 'launcher-tools
+               `("d" :name "Dictionary"
+                 :icon ,(when (require 'nerd-icons nil t)
+                          (nerd-icons-faicon "nf-fa-book"))
+                 :query my/dictionary-query
+                 :debounce 0.3
+                 :submit my/dictionary-submit)))
+#+end_src
 
-(defun my-favorite-submit (candidate)
+** Choose from a list
+
+For bookmarks, playlists, or mounted volumes, provide a list and use the selected
+candidate's ~:data~ in your action. For example:
+
+#+begin_src emacs-lisp
+(defun my/bookmark-submit (candidate)
   (browse-url (plist-get candidate :data))
-  nil)
-#+end_src
-
-Typing ~d hello~ keeps the complete input in the box, passes ~hello~ to
-~:query~, and queries only that tool.  Without a prefix, all unprefixed
-tools participate.  Only selecting a result calls ~:submit~.
-
-- PREFIX is nil, ~""~, or a single string without whitespace.  It matches
-  case-sensitively when followed by an ASCII space.  Prefixes must be
-  unique within ~launcher-tools~.  Before the space, prefix
-  entries appear alongside general results; selecting one fills its prefix
-  and a space.  Tool names are labels, not searchable entry aliases.
-- ~:candidates~ is a complete list of candidate plists or a no-argument
-  function returning one.  Launcher loads it lazily once per input session,
-  caching empty lists and errors too.  Reopening Launcher reloads it.
-  Every input change matches the full cached list using completion styles,
-  category ~launcher-tool~, ignoring case.  Only ~:title~ is searched;
-  duplicate titles remain distinct candidates.  Application matching
-  continues to use ~launcher-app~.
-- ~:query~ receives unchanged query text and returns already matched
-  dynamic candidates.  Launcher does not filter them again.  Static and
-  dynamic sources may coexist or both be absent; with neither there are
-  no content candidates, even if ~:submit~ is configured.
-- Candidates require a stable, non-nil ~:id~ and nonblank string ~:title~.
-  Optional fields are ~:subtitle~, ~:icon~ and arbitrary ~:data~.
-  A tool's ~:icon~ is shown on its prefix entry and inherited by static and
-  dynamic candidates without ~:icon~.  An explicit candidate ~:icon~ overrides
-  it, including ~nil~ or ~""~ for a blank slot.  Tools and candidates use the
-  same icon formats below.
-  ~:icon~ accepts a string (including text properties, as returned by
-  nerd-icons), ~(:file PNG-PATH)~, ~(:builtin KEY)~, or nil.
-  PNGs are square, sized to the current buffer's default font height;
-  text icons keep their font and color properties and are centered in a slot
-  at least that many pixels wide.  Empty strings use the same blank
-  slot as nil.  Text wider than the slot keeps its original size.  All icons follow
-  ~launcher-show-icons~ and the existing graphical display requirements.
-  Missing or unusable images show blank space without blocking actions.
-  IDs must be unique within each source.  Static matches appear first;
-  dynamic results with the same ID replace them in place, and remaining
-  dynamic results follow in their returned order.  Equal titles do not
-  imply equal identity.  Source errors are independent: surviving results
-  remain available, with errors shown in the status area.
-- Every tool with a candidate source requires ~:submit~.  It receives the
-  selected candidate, including its ~:data~, and returns nil after an action,
-  a live non-minibuffer buffer to display, a buffer request described below,
-  or ~(:input STRING)~ to replace
-  the input and keep querying.  Submission errors keep input for retry.
-  Loading and querying must generate data without performing submit actions.
-- ~:debounce~ is a finite nonnegative delay in seconds, default 0, affecting
-  dynamic queries only.  Static matches appear immediately.  New input
-  cancels old timers and invalidates old candidates; obsolete results cannot
-  publish.  Navigation does not query again.  Queries are synchronous, so
-  debouncing reduces calls but does not make slow queries nonblocking.
-- Completely blank input shows no results and loads no sources.  An explicit
-  prefix with a blank query (~play ~) shows all static candidates without
-  calling ~:query~.  A tool without a static source instead shows its prefix
-  entry.  Explicit searches never use default web-search fallback.
-- Successful selections record stable IDs in ~launcher-selection-history~.
-  Nonblank full inputs, including canceled searches and prefixes with spaces,
-  are recorded in ~minibuffer-history~ on exit.  ~M-p~/~M-n~ browse this same
-  history across tools; ~savehist-mode~ can persist it.
-- Result buffers are displayed after the minibuffer closes through
-  ~pop-to-buffer~.  Launcher does not kill them.  Application discovery
-  failures do not prevent custom tools from working.
-
-A submit function may return ~(:buffer BUFFER :action ACTION)~ to control
-display after the minibuffer closes.  ~:action~ is optional; omitting it or
-using nil gives the default display behavior, as does returning BUFFER
-directly.  BUFFER must be a live non-minibuffer buffer object.  ACTION is
-passed unchanged to Emacs's ~pop-to-buffer~.  Input and buffer requests
-cannot be mixed; duplicate keys, unknown keys and incomplete plists are
-rejected before the minibuffer closes.  Errors during display are reported
-after it closes, without retrying the submit action.
-
-#+begin_src emacs-lisp
-(defun my/result-submit (candidate)
-  "Prepare CANDIDATE's result for display in another window."
-  (let ((buffer (get-buffer-create "*My Result*")))
-    (with-current-buffer buffer
-      (let ((inhibit-read-only t))
-        (erase-buffer)
-        (insert (plist-get candidate :data)))
-      (special-mode))
-    ;; Launcher displays the result after closing its minibuffer.
-    (list :buffer buffer
-          :action '((display-buffer-reuse-window display-buffer-pop-up-window)
-                    (inhibit-same-window . t)))))
-#+end_src
-
-*** Migration
-
-Tool and candidate ~:function~ properties are no longer supported and report
-an explicit migration error.  Move execution into a tool's ~:submit~ and
-carry its arguments in candidate ~:data~.  A former submit-only tool must
-now provide ~:query~ to create a candidate, as in the Dictionary example
-above.  The former ~:history~ property remains unsupported.
-
-*** Music playlist example
-
-The provider reads the M3U once per Launcher session and retains each song's
-original playlist index.  Typing ~play ~ lists songs; text after ~play ~
-filters their titles using your completion settings.
-
-#+begin_src emacs-lisp
-(require 'cl-lib)
-
-(defun my/music-candidates ()
-  (let ((playlist (expand-file-name my/mpv-music-playlist)))
-    (unless (equal (file-name-extension playlist) "m3u")
-      (user-error "Invalid M3U playlist: %s" playlist))
-    (with-temp-buffer
-      (insert-file-contents playlist)
-      (let ((songs (seq-remove
-                    (lambda (line) (or (string-empty-p line)
-                                       (string-prefix-p "#" line)))
-                    (split-string (buffer-string) "[\r\n]+" t))))
-        (cl-loop for song in songs for index from 0
-                 collect (list :id index :title (file-name-nondirectory song)
-                               :subtitle song
-                               :data (list :playlist playlist :index index)))))))
-
-(defun my/play-song (candidate)
-  (let ((data (plist-get candidate :data)))
-    (mpv-start "--volume=30" "--no-video" "--loop-playlist=inf"
-               "--no-resume-playback"
-               (format "--playlist-start=%d" (plist-get data :index))
-               (plist-get data :playlist)))
   nil)
 
 (add-to-list 'launcher-tools
-             '("play" :name "Play Music" :candidates my/music-candidates
-                      :submit my/play-song))
+             '("fav" :name "Bookmarks"
+               :candidates ((:id emacs :title "Emacs"
+                             :data "https://www.gnu.org/software/emacs/")
+                            (:id github :title "GitHub"
+                             :data "https://github.com/"))
+               :submit my/bookmark-submit))
 #+end_src
 
-A minibuffer-only host has no ordinary window for a result buffer;
-~launcher~ uses your ~pop-to-buffer~ display rules for results in ordinary
-Emacs windows.  For a Portal panel, use
-~(portal-launcher-present #'launcher :kind 'minibuffer)~.
+Type ~fav ~ to list bookmarks or ~fav em~ to filter them. To load the list at
+runtime, set ~:candidates~ to a function that takes no arguments.
 
-* Development
+** Run a command
 
-Run the regression tests without Vertico, launching apps or opening a browser:
+Even a command with no arguments needs a candidate. For example:
+
+#+begin_src emacs-lisp
+(defun my/empty-trash-submit (_candidate)
+  (when (yes-or-no-p "Empty Trash permanently? ")
+    (start-process "empty-trash" nil "osascript" "-e"
+                   "tell application \"Finder\" to empty the trash"))
+  nil)
+
+(add-to-list 'launcher-tools
+             '("empty-trash" :name "Empty Trash"
+               :candidates ((:id empty-trash :title "Empty Trash"
+                             :subtitle "Permanently delete; confirmation required"))
+               :submit my/empty-trash-submit))
+#+end_src
+
+** Show a live preview
+
+Use ~:query~ when results depend on the current input. This tool previews
+URL-encoded text and copies it on ~RET~:
+
+#+begin_src emacs-lisp
+(defun my/url-encode-query (query)
+  (let ((encoded (url-hexify-string query)))
+    (list (list :id 'encoded :title encoded
+                :subtitle "Copy URL-encoded text" :data encoded))))
+
+(defun my/url-encode-submit (candidate)
+  (kill-new (plist-get candidate :data))
+  nil)
+
+(add-to-list 'launcher-tools
+             '("encode" :name "URL Encode"
+               :query my/url-encode-query :submit my/url-encode-submit))
+#+end_src
+
+Query functions should only produce candidates. Put actions such as copying,
+launching, or deleting in ~:submit~. For slow queries, add ~:debounce 0.3~ to
+reduce calls while typing.
+
+* Use a global shortcut
+
+To open Launcher from outside Emacs, use [[https://github.com/asmvik/skhd][skhd]] to bind a shortcut that calls
+~emacsclient~. Start an Emacs server and define this wrapper to focus an active
+minibuffer or open Launcher:
+
+#+begin_src emacs-lisp
+(require 'server)
+(unless (server-running-p)
+  (server-start))
+
+(defun my/launcher ()
+  "Focus the active minibuffer or open Launcher."
+  (interactive)
+  (run-at-time
+   0 nil
+   (lambda ()
+     (condition-case nil
+         (if-let* ((win (active-minibuffer-window)))
+             (select-frame-set-input-focus (window-frame win))
+           (select-frame-set-input-focus (selected-frame))
+           (call-interactively #'launcher))
+       (quit nil)))))
+#+end_src
+
+Add this ~Alt-Escape~ binding to =~/.skhdrc=. Adjust the ~emacsclient~ path and
+server socket path to match your installation:
+
+#+begin_src conf
+alt - escape : /opt/homebrew/bin/emacsclient -s "$(/usr/bin/getconf DARWIN_USER_TEMP_DIR)emacs$(/usr/bin/id -u)/server" -e '(my/launcher)' 2>/dev/null || /usr/bin/open -a Emacs
+#+end_src
+
+You can also use [[https://github.com/xiaoxinghu/m-x][M-x.app]] to invoke Emacs from a global shortcut.
+
+* More examples and development
+
+See [[file:docs/tool-examples.org][tool examples]] for more search engines and tools to quit apps, eject volumes,
+and play an M3U playlist with mpv.
+
+Run the regression suite:
 
 #+begin_src sh
-sh test/elpa.sh   # pinned packages, into .cache/elpa
+sh test/elpa.sh
 emacs --batch -Q -L . -L test -l test/launcher-tests.el \
   -l test/launcher-tools-tests.el -l test/launcher-candidates-tests.el \
   -l test/launcher-icons-tests.el -l test/launcher-icons-worker-tests.el \
   -f ert-run-tests-batch-and-exit
 #+end_src
-
-The icon cache checks (~test/launcher-icons-tests.el~) replace the worker
-with a fake process, so they need neither macOS nor a display.
-~test/launcher-icons-worker-tests.el~ runs the real worker on system apps
-and on fake bundles in temporary directories, on macOS only, and skips
-elsewhere.
-
-Vertico's display needs a graphical Emacs.  ~bash test/vm.sh~ runs the
-graphical checks (~test/gui.sh~, which loads ~test/launcher-gui-tests.el~,
-~test/launcher-tools-gui-tests.el~ and ~test/launcher-icons-gui-tests.el~) in a disposable Emacs in the macOS test VM
-that Portal's ~test/vm.sh~ uses, without Portal, typing through AppKit's
-event queue.  It fetches pinned Vertico, Orderless and Marginalia releases
-with ~test/elpa.sh~ into ~.cache/elpa~, and copies logs and screenshots back
-to ~.cache/vm/~.  Never run these checks in your own Emacs session.
-
-* Works with [[https://github.com/xiaoxinghu/m-x][M-x.app]]
-
-M-x.app registers the ~emacs://~ URL scheme, letting you invoke Elisp from a global hotkey anywhere on macOS. Bind it to =cmd + space=, you get a system-wide app launcher — Raycast-style, but in Emacs.
-
-* Roadmap
-
-This is part of a broader effort to replace Raycast with Emacs.
-
-** DONE *Search tools*
-~g query~, ~gh repo~, ~yt video~ to redirect input to configurable URL templates
-** TODO *Custom commands*
-register named elisp actions alongside apps via ~launcher-register-command~
-** TODO *Built-in extensions*
-clipboard history, window management, system commands (sleep/lock/restart), file search, quick links, snippets

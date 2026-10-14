@@ -1,0 +1,139 @@
+#+TITLE: Launcher tool examples
+
+Add these examples to your Emacs configuration after loading Launcher. Enable
+lexical binding by adding ~;;; -*- lexical-binding: t; -*-~ as the first line of
+your configuration file; the process callbacks below need it.
+See [[file:../README.org][the README]] for dictionary previews and a command to empty the Trash.
+
+* Multiple search engines
+
+Search with ~ddg query~, ~yt query~, or ~gh query~. This adds the tools in the
+order shown and uses nerd-icons if loaded. Omit any prefix you already use
+elsewhere, such as ~gh~ from the README example.
+
+#+begin_src emacs-lisp
+(dolist (entry
+         '(("ddg" "DuckDuckGo" "https://duckduckgo.com/?q=%s" nil)
+           ("yt" "YouTube" "https://www.youtube.com/results?search_query=%s"
+            "nf-fa-youtube_play")
+           ("gh" "GitHub" "https://github.com/search?q=%s"
+            "nf-fa-github")))
+  (add-to-list 'launcher-tools
+               (launcher-search-tool
+                (nth 0 entry) :name (nth 1 entry) :url (nth 2 entry)
+                :icon (when (and (nth 3 entry) (featurep 'nerd-icons))
+                        (nerd-icons-faicon (nth 3 entry))))
+               t))
+#+end_src
+
+* Quit a running application
+
+Type ~quit ~ to list running foreground apps. Select one and press ~RET~ to ask
+it to quit. Each result uses the app's icon from Launcher's index.
+
+#+begin_src emacs-lisp
+(defun my/quit-app-candidates ()
+  "Return running foreground applications with launcher icons."
+  (let* ((script
+          "tell application \"System Events\" to get name of application processes whose background only is false")
+         (apps
+          (with-temp-buffer
+            (unless (zerop (call-process "osascript" nil t nil "-e" script))
+              (user-error "Failed to list running applications: %s"
+                          (string-trim (buffer-string))))
+            (split-string (string-trim (buffer-string)) ", " t))))
+    (mapcar
+     (lambda (app)
+       (list :id app :title app :icon (launcher-icons-app app) :data app))
+     (delete-dups apps))))
+
+(defun my/quit-app-submit (candidate)
+  "Ask the selected application to quit."
+  (let ((app (plist-get candidate :data)))
+    (make-process
+     :name "quit-app" :buffer nil :noquery t
+     :command (list "osascript" "-e" (format "tell application %S to quit" app))
+     :sentinel
+     (lambda (proc _event)
+       (when (memq (process-status proc) '(exit signal))
+         (unless (and (eq (process-status proc) 'exit)
+                      (zerop (process-exit-status proc)))
+           (message "Failed to request quit: %s" app))))))
+  nil)
+
+(add-to-list 'launcher-tools
+             `("quit" :name "Quit App"
+               :icon ,(when (featurep 'nerd-icons)
+                        (nerd-icons-faicon "nf-fa-power_off"))
+               :candidates my/quit-app-candidates :submit my/quit-app-submit))
+#+end_src
+
+* Eject a mounted volume
+
+This reads ~/Volumes~ once per launcher session. Type ~eject ~ to list mounted
+volumes, then filter the list and press ~RET~ to eject one.
+
+#+begin_src emacs-lisp
+(defun my/eject-volume-candidates ()
+  (mapcar
+   (lambda (path)
+     (list :id path :title (file-name-nondirectory path)
+           :subtitle path :data path))
+   (seq-filter
+    (lambda (path)
+      (and (file-directory-p path) (not (file-symlink-p path))))
+    (directory-files "/Volumes" t directory-files-no-dot-files-regexp))))
+
+(defun my/eject-volume-submit (candidate)
+  (let* ((volume (plist-get candidate :data))
+         (script (format "tell application \"Finder\" to eject POSIX file %s as alias"
+                         (prin1-to-string volume))))
+    (with-temp-buffer
+      (unless (zerop (call-process "osascript" nil t nil "-e" script))
+        (user-error "Could not eject volume: %s" (string-trim (buffer-string)))))
+    (message "Volume ejected: %s" volume))
+  nil)
+
+(add-to-list 'launcher-tools
+             '("eject" :name "Eject Volume"
+               :candidates my/eject-volume-candidates
+               :submit my/eject-volume-submit))
+#+end_src
+
+* Play an M3U playlist
+
+Install the ~mpv~ Emacs package and the ~mpv~ executable. Set
+~my/mpv-music-playlist~ to a plain M3U file with one local track path per line.
+Relative paths are resolved from the playlist's directory. Type ~play ~ to list
+tracks or ~play title~ to filter them.
+
+#+begin_src emacs-lisp
+(defvar my/mpv-music-playlist "~/Music/playlist.m3u")
+
+(defun my/music-candidates ()
+  (let ((playlist (expand-file-name my/mpv-music-playlist)))
+    (with-temp-buffer
+      (insert-file-contents playlist)
+      (let ((songs (seq-remove
+                    (lambda (line) (string-prefix-p "#" line))
+                    (split-string (buffer-string) "[\r\n]+" t))))
+        (cl-loop for song in songs for index from 0
+                 collect (list :id index :title (file-name-nondirectory song)
+                               :subtitle song
+                               :data (list :playlist playlist :index index)))))))
+
+(defun my/play-song (candidate)
+  (require 'mpv)
+  (let* ((data (plist-get candidate :data))
+         (playlist (plist-get data :playlist))
+         (default-directory (file-name-directory playlist)))
+    (mpv-start "--volume=30" "--no-video" "--loop-playlist=inf"
+               "--no-resume-playback"
+               (format "--playlist-start=%d" (plist-get data :index))
+               playlist))
+  nil)
+
+(add-to-list 'launcher-tools
+             '("play" :name "Play Music"
+               :candidates my/music-candidates :submit my/play-song))
+#+end_src

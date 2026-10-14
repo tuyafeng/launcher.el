@@ -5,7 +5,7 @@
 (defconst launcher-test--search-tools
   (list (launcher-search-tool "gh" :name "GitHub"
                               :url "https://github.com/search?q=%s"))
-  "Explicit GitHub search configuration shared by batch and GUI tests.")
+  "Explicit GitHub search configuration shared by batch tests.")
 
 (defun launcher-test--submit-action (candidate)
   "Execute a no-argument test action carried as CANDIDATE data."
