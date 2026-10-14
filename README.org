@@ -137,6 +137,21 @@ by Launcher's cache cleanup.  Migrate former ~:icon-path APP-PATH~ fields to
 is optional.  Your completion styles apply to app matching, and your UI's
 sorting and navigation apply to candidates.
 
+Result subtitles use the standard ~completions-annotations~ face and start
+in a shared column, with or without icons.  The column is calculated from
+visible names (in pixels in a graphical frame, in columns in a terminal),
+leaves a two-space gap, and grows in four-space steps.  It does not shrink
+while filtering within one launcher session; reopening the launcher or
+changing window/font metrics recalculates it.  The name area is limited to
+40 character columns (including icons and spacing), converted to pixels
+using the current font in graphical frames.  Narrow windows reduce this
+limit to leave ten columns for annotations.  Long names and subtitles
+are shortened with an ellipsis for display only, preserving the full name
+and action.  Truncated names
+also retain their full title as hover text.  Stock ~*Completions*~ uses a
+single column during Launcher; your global completion layout is unchanged.
+No Marginalia installation is needed for this layout.
+
 Completion styles can interpret special characters.  With Orderless 1.8's
 default configuration, ~!~ alone is ignored and shows all applications;
 ~!chro~ excludes applications matching ~chro~, such as Chrome and Chromium.

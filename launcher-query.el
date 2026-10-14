@@ -32,7 +32,7 @@
 (cl-defstruct (launcher--query-session (:constructor launcher--query-session-create))
   tools styles overrides defaults buffer input (version 0)
   slots static-cache timers errors pending results candidates closed answer
-  status-overlay selection route)
+  status-overlay selection route (annotation-column 0) annotation-metrics)
 
 (defvar-local launcher--query-session nil "This minibuffer's launcher query session.")
 (defvar launcher-selection-history nil
@@ -422,17 +422,82 @@ Inherit TOOL's icon only when ITEM has no :icon, leaving ITEM unchanged."
   (and launcher--query-session
        (gethash candidate (launcher--query-session-candidates launcher--query-session))))
 
-(defun launcher--results-annotation (candidate)
-  "Annotate CANDIDATE using its structured result."
-  (when-let* ((subtitle (plist-get (launcher--result-for-candidate candidate) :subtitle)))
-    (concat "  " subtitle)))
+(defun launcher--display-width (string pixels)
+  "Measure STRING in pixels when PIXELS is non-nil, otherwise columns."
+  (if pixels (string-pixel-width string (current-buffer)) (string-width string)))
+
+(defun launcher--display-truncate (string width pixels)
+  "Return STRING shortened to WIDTH display units, preserving properties."
+  (setq width (max 0 width))
+  (if (<= (launcher--display-width string pixels) width) string
+    (let* ((ellipsis (propertize "…" 'face (get-text-property 0 'face string)))
+           (room (- width (launcher--display-width ellipsis pixels)))
+           (low 0) (high (length string)))
+      (if (< room 0) ""
+        ;; Measure prefixes rather than summing glyph widths (font shaping).
+        (while (< low high)
+          (let ((mid (/ (+ low high 1) 2)))
+            (if (<= (launcher--display-width (substring string 0 mid) pixels) room)
+                (setq low mid)
+              (setq high (1- mid)))))
+        (concat (substring string 0 low) ellipsis)))))
 
 (defun launcher--results-affixation (candidates)
-  "Affix CANDIDATES with their tool-provided icons and subtitles."
-  (mapcar (lambda (candidate)
-            (list candidate
-                  (launcher-icons-prefix (plist-get (launcher--result-for-candidate candidate) :icon))
-                  (or (launcher--results-annotation candidate) ""))) candidates))
+  "Affix CANDIDATES with icons and a stable, window-sized annotation column.
+Only display copies are shortened; completion identities remain intact."
+  (let* ((pixels (display-graphic-p))
+         (width (max 1 (window-body-width nil pixels)))
+         (space (max 1 (launcher--display-width " " pixels)))
+         (gap (* 2 space))
+         (step (* 4 space))
+         ;; Cap the whole name area at 40 columns; leave ten for annotations.
+         (limit (min (* 40 space) (max 0 (- width (* 10 space)))))
+         (icons (launcher-icons-enabled-p))
+         (metrics (list pixels width space (default-font-height)
+                        (frame-parameter nil 'font) (copy-tree face-remapping-alist)))
+         (session launcher--query-session)
+         (column 0)
+         (rows
+          (mapcar
+           (lambda (candidate)
+             (let* ((result (launcher--result-for-candidate candidate))
+                    (title (or (plist-get result :title)
+                               (get-text-property 0 'display candidate) candidate))
+                    (prefix (if icons
+                                (launcher-icons-prefix (plist-get result :icon)) ""))
+                    (prefix-width (launcher--display-width prefix pixels)))
+               (setq column (max column (+ prefix-width
+                                           (launcher--display-width title pixels) gap)))
+               (list candidate prefix title prefix-width (plist-get result :subtitle))))
+           candidates)))
+    (setq column (* step (ceiling column step)))
+    (setq column
+          (min limit
+               (max column
+                    (if (and session
+                             (equal metrics (launcher--query-session-annotation-metrics session)))
+                        (launcher--query-session-annotation-column session)
+                      0))))
+    (when session
+      (setf (launcher--query-session-annotation-column session) column
+            (launcher--query-session-annotation-metrics session) metrics))
+    (mapcar
+     (lambda (row)
+       (pcase-let* ((`(,candidate ,prefix ,title ,prefix-width ,subtitle) row)
+                    (visible (launcher--display-truncate
+                              title (- column gap prefix-width) pixels))
+                    (copy (if (equal visible title) candidate
+                            (propertize candidate 'display visible 'help-echo title)))
+                    (annotation (launcher--display-truncate
+                                 (propertize (or subtitle "") 'face 'completions-annotations)
+                                 (- width column space) pixels)))
+         (list copy prefix
+               (if (string-empty-p annotation) ""
+                 (concat
+                  (propertize " " 'display
+                              `(space :align-to ,(if pixels (list column) column)))
+                  annotation)))))
+     rows)))
 
 (defun launcher--results-setup-history ()
   "Initialize a private input history snapshot for minibuffer navigation."
@@ -565,9 +630,9 @@ after closing the minibuffer.  No raw input is executed."
                 (assq-delete-all 'launcher-result (copy-tree completion-category-overrides))))
          (icons (launcher-icons-enabled-p))
          choice
+         (completions-format 'one-column)
          (completion-extra-properties
-          (if icons '(:affixation-function launcher--results-affixation)
-            '(:annotation-function launcher--results-annotation))))
+          '(:affixation-function launcher--results-affixation)))
     (when (and icons entries)
       (condition-case err (launcher-icons-prepare (mapcar #'cdr entries))
         (error (message "Launcher icons unavailable: %s" (error-message-string err)))))

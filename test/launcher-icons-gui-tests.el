@@ -113,11 +113,28 @@ WIDTH is the pixel width of the row's text before its candidate."
         (push height heights)))
     (nreverse heights)))
 
+(defun launcher-gui-icons--check-annotations (string)
+  "Check STRING's annotations share a pixel column and standard face.
+Return the shared column."
+  (let ((pos 0) columns)
+    (while (< pos (length string))
+      (let ((display (get-text-property pos 'display string)))
+        (when (and (eq (car-safe display) 'space) (plist-member (cdr display) :align-to))
+          (let ((coordinate (plist-get (cdr display) :align-to)))
+            (should (consp coordinate))
+            (push (car coordinate) columns))
+          (should (memq 'completions-annotations
+                        (ensure-list (get-text-property (1+ pos) 'face string))))))
+      (setq pos (next-single-property-change pos 'display string (length string))))
+    (should columns)
+    (should (= (length (delete-dups columns)) 1))
+    (car columns)))
+
 (ert-deftest launcher-gui-icons-vertico-minibuffer ()
   "Vertico with Marginalia shows one aligned native icon per app row,
 the selected row included, without changing what is launched."
   (launcher-gui-icons--with
-    (let (states)
+    (let (states columns)
       (vertico-mode 1)
       (marginalia-mode 1)
       (unwind-protect
@@ -125,6 +142,8 @@ the selected row included, without changing what is launched."
            #'launcher
            (list "C" (lambda ()
                    (redisplay t)
+                   (push (launcher-gui-icons--check-annotations
+                          (launcher-gui-icons--vertico-string)) columns)
                    (launcher-gui--capture "icons-vertico")
                    (push (list (launcher-gui-icons--vertico-string)
                                (launcher-gui-icons--line-heights (active-minibuffer-window)))
@@ -132,6 +151,8 @@ the selected row included, without changing what is launched."
                  'backspace "No"
                  (lambda ()
                    (redisplay t)
+                   (push (launcher-gui-icons--check-annotations
+                          (launcher-gui-icons--vertico-string)) columns)
                    (launcher-gui--capture "icons-vertico-notes")
                    (push (list (launcher-gui-icons--vertico-string)
                                (launcher-gui-icons--line-heights (active-minibuffer-window)))
@@ -139,6 +160,7 @@ the selected row included, without changing what is launched."
                  'down 'return))
         (marginalia-mode -1)
         (vertico-mode -1))
+      (should (>= (car columns) (cadr columns)))
       (setq states (nreverse states))
       (pcase-dolist (`(,string ,heights) states)
         (let ((rows (launcher-gui-icons--rows string)))
@@ -231,6 +253,26 @@ the selected row included, without changing what is launched."
           ;; The same buffer produces larger and smaller icons after remapping.
           (should (apply #'> heights)))))))
 
+(ert-deftest launcher-gui-icons-annotation-font-remapping ()
+  "Annotation columns recalculate and remain aligned after font remapping."
+  (launcher-gui-icons--with
+    (vertico-mode 1)
+    (unwind-protect
+        (launcher-gui-icons--quietly
+         #'launcher
+         (list "C"
+               (lambda ()
+                 (let ((before (launcher-gui-icons--check-annotations
+                                (launcher-gui-icons--vertico-string))))
+                   (text-scale-set 2)
+                   (vertico--exhibit)
+                   (redisplay t)
+                   (should (> (launcher-gui-icons--check-annotations
+                               (launcher-gui-icons--vertico-string)) before)))
+                 (launcher-gui--capture "icons-annotation-scaled"))
+               'quit))
+      (vertico-mode -1))))
+
 (ert-deftest launcher-gui-icons-stock-completion ()
   "Stock completion's *Completions* shows the icons too."
   (launcher-gui-icons--with
@@ -244,6 +286,7 @@ the selected row included, without changing what is launched."
                (redisplay t)
                (launcher-gui--capture "icons-stock-completion")
                (with-current-buffer "*Completions*"
+                 (launcher-gui-icons--check-annotations (buffer-string))
                  (setq rows (launcher-gui-icons--rows (buffer-string)))))
              'quit))
       (message "Icons: stock rows %S"

@@ -433,7 +433,7 @@ It is named like the launcher's own, as a shared directory may hold."
               (launcher-test--reader
                (list (lambda ()
                        (should (equal completion-extra-properties
-                                      '(:annotation-function launcher--results-annotation)))
+                                      '(:affixation-function launcher--results-affixation)))
                        (launcher-test--input "text ")
                        (launcher-results-submit)
                        nil)))))
@@ -555,7 +555,7 @@ It is named like the launcher's own, as a shared directory may hold."
               (launcher-test--reader
                (list (lambda ()
                        (should (equal completion-extra-properties
-                                      '(:annotation-function launcher--results-annotation)))
+                                      '(:affixation-function launcher--results-affixation)))
                        "Calc")))))
         (cl-letf (((symbol-function 'launcher--launch) #'ignore)) (launcher))
         (should-not launcher-icons-test--spawned)
@@ -597,8 +597,10 @@ It is named like the launcher's own, as a shared directory may hold."
       (launcher-icons-test--draw)
       (let ((affixed (launcher--results-affixation candidates)))
         (should (equal (mapcar #'car affixed) candidates))
-        (should (equal (nth 2 (car affixed)) (concat "  " (abbreviate-file-name (cdar entries)))))
-        (should (equal (nth 2 (car (last affixed))) "  Google"))
+        (should (string-prefix-p " " (nth 2 (car affixed))))
+        (should (eq (get-text-property 1 'face (nth 2 (car affixed)))
+                    'completions-annotations))
+        (should (equal (substring-no-properties (nth 2 (car (last affixed)))) " Google"))
         (should (equal (get-text-property 0 'display (nth 1 (car (last affixed))))
                        '(space :width (20) :height (20))))
         (let ((files (mapcar (lambda (entry)
@@ -658,5 +660,164 @@ It is named like the launcher's own, as a shared directory may hold."
               (should (eq (car (get-text-property 0 'display (nth 1 (car affixed)))) 'image))
               (dolist (entry affixed) (should (equal (substring-no-properties (nth 1 entry)) "  ")))))
         (marginalia-mode -1) (nerd-icons-completion-mode -1)))))
+
+;;; Annotation layout
+
+(defun launcher-icons-test--layout-session (&rest titles)
+  "Return a session with TITLES and long subtitles, without app discovery."
+  (let ((session (launcher--query-session-create :candidates (make-hash-table :test #'equal))))
+    (cl-loop for title in titles for index from 0 do
+             (let ((candidate (propertize (format "opaque-%d" index) 'display title)))
+               (puthash candidate (list :title title :subtitle (make-string 150 ?x))
+                        (launcher--query-session-candidates session))))
+    session))
+
+(defun launcher-icons-test--layout-column (row)
+  "Return ROW's annotation alignment coordinate."
+  (get-text-property 0 'display (nth 2 row)))
+
+(ert-deftest launcher-icons-annotations-stable-and-session-local ()
+  "Filtering never shrinks the column; new long titles grow it in steps."
+  (let* ((launcher--query-session (launcher-icons-test--layout-session "A" "Long name" "Much longer name"))
+         (launcher-show-icons nil)
+         (keys '("opaque-0" "opaque-1" "opaque-2")))
+    (cl-letf (((symbol-function 'display-graphic-p) #'ignore)
+              ((symbol-function 'window-body-width) (lambda (&rest _) 100)))
+      (let* ((rows (launcher--results-affixation (seq-take keys 2)))
+             (column (launcher-icons-test--layout-column (car rows))))
+        (should (equal column '(space :align-to 12)))
+        (should (equal column (launcher-icons-test--layout-column (cadr rows))))
+        (should (equal column (launcher-icons-test--layout-column
+                               (car (launcher--results-affixation (list (car keys)))))))
+        (should (equal '(space :align-to 20)
+                       (launcher-icons-test--layout-column
+                        (car (launcher--results-affixation (list (nth 2 keys)))))))
+        (let ((launcher--query-session (launcher-icons-test--layout-session "A")))
+          (should (equal '(space :align-to 4)
+                         (launcher-icons-test--layout-column
+                          (car (launcher--results-affixation '("opaque-0")))))))))))
+
+(ert-deftest launcher-icons-annotations-truncate-display-only ()
+  "Wide titles and annotations fit; identities and source titles survive."
+  (let* ((title (concat "中文" (make-string 80 ?a)))
+         (launcher--query-session (launcher-icons-test--layout-session title))
+         (launcher-show-icons nil)
+         (key (car (hash-table-keys (launcher--query-session-candidates launcher--query-session)))))
+    (cl-letf (((symbol-function 'display-graphic-p) #'ignore)
+              ((symbol-function 'window-body-width) (lambda (&rest _) 100)))
+      (let* ((row (car (launcher--results-affixation (list key))))
+             (visible (get-text-property 0 'display (car row)))
+             (suffix (nth 2 row)))
+        (should (equal (car row) key))
+        (should (eq (launcher--result-for-candidate (car row)) (launcher--result-for-candidate key)))
+        (should (equal (get-text-property 0 'display key) title))
+        (should (equal (plist-get (launcher--result-for-candidate key) :title) title))
+        (should (<= (string-width visible) 38))
+        (should (string-suffix-p "…" visible))
+        (should (equal '(space :align-to 40) (launcher-icons-test--layout-column row)))
+        (should (<= (string-width (substring suffix 1)) 59))
+        (should (eq (get-text-property 1 'face suffix) 'completions-annotations))
+        (should (eq (get-text-property (1- (length suffix)) 'face suffix)
+                    'completions-annotations))
+        (should (string-suffix-p "…" suffix))
+        (should (equal (nth 1 row) ""))))))
+
+(ert-deftest launcher-icons-annotations-reset-on-resize-and-font-change ()
+  "Changing rendering metrics resets the session's remembered column."
+  (let* ((launcher--query-session (launcher-icons-test--layout-session "A" "Long name"))
+         (launcher-show-icons nil) (width 100) (height 20))
+    (cl-letf (((symbol-function 'display-graphic-p) #'ignore)
+              ((symbol-function 'window-body-width) (lambda (&rest _) width))
+              ((symbol-function 'default-font-height) (lambda () height)))
+      (launcher--results-affixation '("opaque-0" "opaque-1"))
+      (setq width 80)
+      (should (equal '(space :align-to 4) (launcher-icons-test--layout-column
+                                         (car (launcher--results-affixation '("opaque-0"))))))
+      (launcher--results-affixation '("opaque-1"))
+      (setq height 30)
+      (should (equal '(space :align-to 4) (launcher-icons-test--layout-column
+                                         (car (launcher--results-affixation '("opaque-0")))))))))
+
+(ert-deftest launcher-icons-annotations-pixel-prefix-and-no-subtitle ()
+  "Pixel layout accounts for image slots and text prefixes, and omits absent notes."
+  (let* ((launcher--query-session (launcher-icons-test--layout-session "A" "B"))
+         (table (launcher--query-session-candidates launcher--query-session)))
+    (setf (plist-get (gethash "opaque-0" table) :icon) '(:file "image.png")
+          (plist-get (gethash "opaque-1" table) :icon) "TTTT"
+          (plist-get (gethash "opaque-1" table) :subtitle) nil)
+    (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t))
+              ((symbol-function 'launcher-icons-enabled-p) (lambda (&rest _) t))
+              ((symbol-function 'default-font-height) (lambda () 20))
+              ((symbol-function 'window-body-width) (lambda (&rest _) 400))
+              ((symbol-function 'string-pixel-width)
+               (lambda (text &rest _)
+                 (if (eq (car-safe (get-text-property 0 'display text)) 'image)
+                     30
+                   (* 10 (string-width text)))))
+              ((symbol-function 'launcher-icons-prefix)
+               (lambda (icon) (if (stringp icon) (concat icon " ")
+                               (concat (propertize " " 'display '(image :width 20 :height 20)) " ")))))
+      (let ((rows (launcher--results-affixation '("opaque-0" "opaque-1"))))
+        (should (equal '(space :align-to (80)) (launcher-icons-test--layout-column (car rows))))
+        (should (equal (nth 2 (cadr rows)) ""))
+        (should (eq (car (get-text-property 0 'display (nth 1 (car rows)))) 'image))))))
+
+(ert-deftest launcher-icons-annotations-too-narrow ()
+  "Extremely narrow windows do not emit annotations which cannot fit."
+  (let ((launcher--query-session (launcher-icons-test--layout-session "中文"))
+        (launcher-show-icons nil))
+    (cl-letf (((symbol-function 'display-graphic-p) #'ignore)
+              ((symbol-function 'window-body-width) (lambda (&rest _) 1)))
+      (let ((row (car (launcher--results-affixation '("opaque-0")))))
+        (should (equal (get-text-property 0 'display (car row)) ""))
+        (should (equal (nth 2 row) ""))))))
+
+(ert-deftest launcher-icons-truncated-title-submits-original-item ()
+  "A shortened display still resolves and executes the full source item."
+  (let* ((title (make-string 100 ?a))
+         (launcher-show-icons nil) submitted)
+    (launcher-test--with-session nil
+        `(("t" :name "Truncation"
+           :candidates ((:id target :title ,title :subtitle "Explanation" :data full-data))
+           :submit ,(lambda (item) (setq submitted item) nil)))
+      (launcher--query-update session "t ")
+      (cl-letf (((symbol-function 'display-graphic-p) #'ignore)
+                ((symbol-function 'window-body-width) (lambda (&rest _) 40)))
+        (let* ((result (car (launcher--query-session-results session)))
+               (candidate (plist-get result :candidate))
+               (row (car (launcher--results-affixation (list candidate)))))
+          (should-not (equal title (get-text-property 0 'display (car row))))
+          (launcher--result-execute (launcher--result-for-candidate (car row)))
+          (should (equal (plist-get submitted :title) title))
+          (should (eq (plist-get submitted :id) 'target))
+          (should (eq (plist-get submitted :data) 'full-data)))))))
+
+(ert-deftest launcher-icons-stock-layout-is-scoped ()
+  "Single-column completion applies only while reading Launcher results."
+  (let ((completions-format 'horizontal)
+        (launcher-show-icons nil)
+        (completing-read-function
+         (launcher-test--reader
+          (list (lambda ()
+                  (should (eq completions-format 'one-column))
+                  (should (equal completion-extra-properties
+                                 '(:affixation-function launcher--results-affixation)))
+                  nil)))))
+    (should (eq (condition-case nil
+                    (launcher--read nil (launcher--tools))
+                  (quit 'quit))
+                'quit))
+    (should (eq completions-format 'horizontal))))
+
+(ert-deftest launcher-icons-annotations-fixed-cap-in-narrow-windows ()
+  "The forty-column cap shrinks when needed to leave annotation room."
+  (let ((launcher--query-session (launcher-icons-test--layout-session (make-string 80 ?a)))
+        (launcher-show-icons nil))
+    (cl-letf (((symbol-function 'display-graphic-p) #'ignore)
+              ((symbol-function 'window-body-width) (lambda (&rest _) 20)))
+      (let ((row (car (launcher--results-affixation '("opaque-0")))))
+        (should (equal '(space :align-to 10) (launcher-icons-test--layout-column row)))
+        (should (<= (string-width (get-text-property 0 'display (car row))) 8))
+        (should (<= (string-width (substring (nth 2 row) 1)) 9))))))
 
 ;;; launcher-icons-tests.el ends here
