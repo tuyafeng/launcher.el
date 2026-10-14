@@ -518,6 +518,100 @@
       (kill-buffer buffer))
     (should-error (launcher-tools-test--execute (launcher-tools-test--item 'x "X" (lambda () buffer))))))
 
+(ert-deftest launcher-tools-buffer-request-validation ()
+  (let ((buffer (generate-new-buffer " *buffer-request*")))
+    (unwind-protect
+        (progn
+          (dolist (value (list (list :buffer buffer)
+                              (list :buffer buffer :action nil)
+                              (list :action '(display-buffer-pop-up-window) :buffer buffer)))
+            (should (eq value (launcher-tools-test--execute
+                              (launcher-tools-test--item 'x "X" (lambda () value))))))
+          (dolist (value (list (list :buffer buffer :input "x")
+                              (list :buffer buffer :buffer buffer)
+                              (list :buffer buffer :unknown nil)
+                              (list :buffer buffer :action)
+                              (list :buffer buffer :action nil :action nil)
+                              (list :buffer buffer :action nil :input "x")
+                              (list :buffer buffer :action nil 'extra)
+                              (cons :buffer buffer)
+                              (list :action nil)
+                              (list :buffer (buffer-name buffer))
+                              (list :buffer (get-buffer-create " *Minibuf-0*"))))
+            (should-error (launcher-tools-test--execute
+                           (launcher-tools-test--item 'x "X" (lambda () value))))))
+      (kill-buffer buffer))
+    (should-error (launcher-tools-test--execute
+                   (launcher-tools-test--item 'x "X" (lambda () (list :buffer buffer)))))))
+
+(ert-deftest launcher-tools-buffer-request-invalid-keeps-input ()
+  (let* ((count 0) (launcher-show-icons nil) (minibuffer-setup-hook nil)
+        (launcher-tools `(("d" :name "Test" :query launcher-test--text-query
+                               :submit ,(lambda (_) (cl-incf count) '(:buffer "invalid")))))
+        (completing-read-function
+         (launcher-test--reader
+          (list (lambda ()
+                  (launcher-test--submit "d hello")
+                  (should (equal "d hello" (buffer-string)))
+                  (should-not (launcher--query-session-answer launcher--query-session))
+                  (signal 'quit nil))))))
+    (cl-letf (((symbol-function 'launcher--entries) (lambda (&rest _) nil)))
+      (should (eq 'quit (condition-case nil (progn (launcher) 'returned)
+                         (quit 'quit)))))
+    (should (= count 1))))
+
+(ert-deftest launcher-tools-buffer-display-after-read ()
+  (let ((buffer (generate-new-buffer " *buffer-display*"))
+        (action '((display-buffer-reuse-window display-buffer-pop-up-window)
+                  (inhibit-same-window . t)))
+        (launcher-show-icons nil))
+    (unwind-protect
+        (dolist (value (list buffer (list :buffer buffer)
+                            (list :buffer buffer :action nil)
+                            (list :buffer buffer :action action)))
+          (let* ((submits 0) (displays 0) (reading nil)
+                (launcher-tools `(("d" :name "Test" :query launcher-test--text-query
+                                       :submit ,(lambda (_) (cl-incf submits) value))))
+                (completing-read-function
+                 (launcher-test--reader
+                  (list (lambda ()
+                          (setq reading t)
+                          (unwind-protect (launcher-test--submit "d hello")
+                            (setq reading nil))
+                          nil)))))
+            (cl-letf (((symbol-function 'launcher--entries) (lambda (&rest _) nil))
+                      ((symbol-function 'pop-to-buffer)
+                       (lambda (result &optional display-action &rest _)
+                         (cl-incf displays)
+                         (should-not reading)
+                         (should-not (active-minibuffer-window))
+                         (should (eq result buffer))
+                         (should (eq display-action
+                                     (unless (bufferp value) (plist-get value :action)))))))
+              (launcher))
+            (should (= submits 1))
+            (should (= displays 1))))
+      (kill-buffer buffer))))
+
+(ert-deftest launcher-tools-buffer-display-failure-does-not-retry ()
+  (dolist (deleted '(nil t))
+    (let* ((buffer (generate-new-buffer " *buffer-display-error*"))
+           (request (list :buffer buffer))
+           (reads 0) (displays 0))
+      (unwind-protect
+          (cl-letf (((symbol-function 'launcher--entries) (lambda (&rest _) nil))
+                    ((symbol-function 'launcher--read)
+                     (lambda (&rest _)
+                       (cl-incf reads)
+                       (when deleted (kill-buffer buffer))
+                       (cons request "d hello")))
+                    ((symbol-function 'pop-to-buffer)
+                     (lambda (&rest _) (cl-incf displays) (error "Display failed"))))
+            (should-error (launcher))
+            (should (= reads 1))
+            (should (= displays (if deleted 0 1))))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
 (ert-deftest launcher-tools-query-errors-are-isolated ()
   (launcher-test--with-session nil
       '((nil :name "Bad" :submit launcher-test--submit-action :query (lambda (_) (error "Broken query")))

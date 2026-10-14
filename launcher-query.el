@@ -542,15 +542,21 @@ Only display copies are shortened; completion identities remain intact."
 
 (defun launcher--result-execute (result)
   "Execute RESULT and validate its action return value."
-  (let ((value (if (plist-member result :completion)
-                   (list :input (plist-get result :completion))
-                 (funcall (launcher--tool-submit (plist-get result :tool))
-                          (plist-get result :item)))))
+  (let* ((value (if (plist-member result :completion)
+                    (list :input (plist-get result :completion))
+                  (funcall (launcher--tool-submit (plist-get result :tool))
+                           (plist-get result :item))))
+         (buffer (pcase value
+                   ((pred bufferp) value)
+                   ((or `(:buffer ,buffer)
+                        `(:buffer ,buffer :action ,_)
+                        `(:action ,_ :buffer ,buffer))
+                    buffer))))
     (unless (or (null value)
-                (and (bufferp value) (buffer-live-p value) (not (minibufferp value)))
+                (and (buffer-live-p buffer) (not (minibufferp buffer)))
                 (and (proper-list-p value) (= (length value) 2)
                      (eq (car value) :input) (stringp (cadr value))))
-      (error "Result action must return nil, a live buffer, or (:input STRING)"))
+      (error "Result action must return nil, a live buffer, (:buffer BUFFER [:action ACTION]), or (:input STRING)"))
     value))
 
 (defun launcher--results-record-selection (result)

@@ -85,6 +85,34 @@
       (should (derived-mode-p 'launcher-gui-tool-result-mode))
       (should-not launcher-gui--searched))))
 
+(ert-deftest launcher-gui-tool-buffer-display-action ()
+  (launcher-gui-tool--with
+    (let* ((origin (selected-window))
+           (origin-buffer (window-buffer origin))
+           (submits 0) (displays 0)
+           (action `((,(lambda (buffer alist)
+                         (cl-incf displays)
+                         (should-not (active-minibuffer-window))
+                         (or (display-buffer-reuse-window buffer alist)
+                             (display-buffer-pop-up-window buffer alist))))
+                     (inhibit-same-window . t)))
+           (launcher-tools
+            `(("d" :name "Dictionary" :query launcher-test--text-query
+                    :submit ,(lambda (candidate)
+                               (cl-incf submits)
+                               (list :buffer (launcher-gui-tool--definition
+                                              (plist-get candidate :data))
+                                     :action action))))))
+      (dotimes (_ 2)
+        (select-window origin)
+        (should (eq 'returned (launcher-gui-tool--run '("d hello" return))))
+        (should (eq (window-buffer origin) origin-buffer))
+        (should-not (eq (selected-window) origin))
+        (should (eq (current-buffer) (get-buffer "*launcher GUI definition*")))
+        (should (= 2 (length (window-list)))))
+      (should (= submits 2))
+      (should (= displays 2)))))
+
 (ert-deftest launcher-gui-tool-debounce-and-navigation ()
   (launcher-gui-tool--with
     (let* ((queries nil)

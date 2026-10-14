@@ -288,7 +288,8 @@ tools participate.  Only selecting a result calls ~:submit~.
   remain available, with errors shown in the status area.
 - Every tool with a candidate source requires ~:submit~.  It receives the
   selected candidate, including its ~:data~, and returns nil after an action,
-  a live non-minibuffer buffer to display, or ~(:input STRING)~ to replace
+  a live non-minibuffer buffer to display, a buffer request described below,
+  or ~(:input STRING)~ to replace
   the input and keep querying.  Submission errors keep input for retry.
   Loading and querying must generate data without performing submit actions.
 - ~:debounce~ is a finite nonnegative delay in seconds, default 0, affecting
@@ -307,6 +308,30 @@ tools participate.  Only selecting a result calls ~:submit~.
 - Result buffers are displayed after the minibuffer closes through
   ~pop-to-buffer~.  Launcher does not kill them.  Application discovery
   failures do not prevent custom tools from working.
+
+A submit function may return ~(:buffer BUFFER :action ACTION)~ to control
+display after the minibuffer closes.  ~:action~ is optional; omitting it or
+using nil gives the default display behavior, as does returning BUFFER
+directly.  BUFFER must be a live non-minibuffer buffer object.  ACTION is
+passed unchanged to Emacs's ~pop-to-buffer~.  Input and buffer requests
+cannot be mixed; duplicate keys, unknown keys and incomplete plists are
+rejected before the minibuffer closes.  Errors during display are reported
+after it closes, without retrying the submit action.
+
+#+begin_src emacs-lisp
+(defun my/result-submit (candidate)
+  "Prepare CANDIDATE's result for display in another window."
+  (let ((buffer (get-buffer-create "*My Result*")))
+    (with-current-buffer buffer
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (insert (plist-get candidate :data)))
+      (special-mode))
+    ;; Launcher displays the result after closing its minibuffer.
+    (list :buffer buffer
+          :action '((display-buffer-reuse-window display-buffer-pop-up-window)
+                    (inhibit-same-window . t)))))
+#+end_src
 
 *** Migration
 

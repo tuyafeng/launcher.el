@@ -109,7 +109,10 @@ The tool's ICON appears on its prefix entry and is the default for
 candidates without :icon.  An explicit candidate :icon, including nil
 or an empty string, overrides it.  Text icon properties are preserved.
 SUBMIT receives the selected candidate and returns
-nil, a live non-minibuffer buffer, or (:input STRING).  Tools with a source
+nil, a live non-minibuffer buffer, (:buffer BUFFER :action ACTION), or
+(:input STRING).  In a buffer request, :action is optional and is passed
+unchanged to `pop-to-buffer'; :buffer must be a live non-minibuffer buffer.
+Do not mix input and buffer requests or repeat keys.  Tools with a source
 require SUBMIT.  The former tool/candidate :function is not supported.
 :debounce is a finite nonnegative delay for QUERY only (default 0).
 
@@ -312,14 +315,19 @@ any other INPUT, which is ordinary app or web input."
   "Query apps, calculator, custom tools and web searches as you type.
 Empty input shows no candidates.  Return executes the selected result.
 A tool prefix stays in the input box.  Results that return a buffer
-are shown with `pop-to-buffer' after the minibuffer closes.
+are shown with `pop-to-buffer' after the minibuffer closes.  A return value
+of (:buffer BUFFER :action ACTION) supplies an optional display action.
 With prefix argument REFRESH, rebuild the application index first.
 INITIAL, when supplied from Lisp, is the full starting input."
   (interactive "P")
   (let* ((tools (launcher--tools))
          (entries (launcher--entries refresh))
-         (answer (launcher--read entries tools initial)))
-    (when (bufferp (car answer)) (pop-to-buffer (car answer)))))
+         (value (car (launcher--read entries tools initial)))
+         (buffer (if (bufferp value) value (plist-get value :buffer))))
+    (when buffer
+      (unless (buffer-live-p buffer)
+        (error "Result buffer is no longer live"))
+      (pop-to-buffer buffer (unless (bufferp value) (plist-get value :action))))))
 
 (provide 'launcher)
 ;;; launcher.el ends here
