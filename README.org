@@ -25,10 +25,22 @@ applications, calculator, then your ~launcher-tools~ in list order.
 
 - ~c~ searches the cached app index, using your completion styles.
 - ~1 + 2 * 3~ previews ~= 7~; Return copies the value and closes the launcher.
-  Decimal numbers, parentheses and ~+ - * /~ are supported; ~= 42~ explicitly
-  requests a calculation.  Incomplete or invalid expressions keep a calculation
+  Calculations use Emacs' built-in Calc syntax: powers (~2^3~), modulo
+  (~10%3~), percentages (~20%~), scientific notation (~1e3+2~), functions
+  (~sqrt(9)~, ~sin(30)~), fractions (~1:3+1:6~), complex numbers (~(1,2)~)
+  and vectors (~[1,2]+[3,4]~) are recognized automatically when they produce
+  constant results.  Implicit multiplication is supported: ~2(3+4)~ is ~14~.
+  Multiplication, division and modulo have equal precedence and run left to
+  right, so ~8/2*2~ is ~8~.  Powers associate right to left: ~2^3^2~ is ~512~.
+  Calc can fill in missing closing parentheses: ~(1+2~ is ~3~.
+  Calc uses fixed default modes (12-digit precision and angles in degrees),
+  independent of your current Calc settings.  Bare decimal numbers do not
+  trigger calculation; ~= 42~ explicitly requests one.  Failed simple
+  arithmetic or any failed input beginning with ~=~ keeps a calculation
   candidate showing ~= INVALID~, so default search does not appear between
-  keystrokes.  Return on INVALID keeps the input and copies nothing.
+  arithmetic keystrokes.  Failed complex expressions such as ~sqrt(~ or ~[1,~
+  continue normal search unless prefixed with ~=~.  Return on INVALID keeps
+  the input and copies nothing; unresolved symbolic formulas are not results.
 - ~g~ offers the default Google search entry alongside matching applications.
   Selecting it fills ~g ~ and keeps the input open.  A prefix followed by only
   whitespace shows the tool's prefix and name without querying; selecting it

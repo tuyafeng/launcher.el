@@ -10,6 +10,9 @@
 (require 'seq)
 
 (defvar launcher-fallback-search-url)
+(declare-function calc-eval "calc" (str &optional separator &rest args))
+(defvar calc-eval-error)
+(defvar calc-multiplication-has-precedence)
 (declare-function launcher--launch "launcher" (app-path))
 (declare-function launcher--callable-p "launcher" (value))
 (declare-function launcher--route "launcher" (input tools))
@@ -119,74 +122,35 @@ Keep source order and all candidates sharing a matching title."
           (puthash index (format "%s (candidates): %s" (launcher--tool-name tool) failure)
                    (launcher--query-session-errors session)))))))
 
-(defun launcher--arithmetic (text)
-  "Parse and calculate TEXT using only decimal numbers and + - * / ().
-Return nil for incomplete or invalid syntax; signal an error for division
-by zero.  No Lisp forms, variables, function calls or evaluation are used."
-  (let ((pos 0) (len (length text)) division-by-zero)
-    (cl-labels
-        ((space () (while (and (< pos len) (memq (aref text pos) '(?\s ?\t ?\n)))
-                     (cl-incf pos)))
-         (peek () (space) (and (< pos len) (aref text pos)))
-         (factor ()
-           (pcase (peek)
-             ((or ?+ ?-) (let ((negative (= (aref text pos) ?-)))
-                           (cl-incf pos)
-                           (* (if negative -1 1) (factor))))
-             (?\( (cl-incf pos)
-                  (let ((value (sum)))
-                    (unless (eq (peek) ?\)) (throw 'invalid nil))
-                    (cl-incf pos) value))
-             (_ (space)
-                (unless (and (string-match "\\(?:[0-9]+\\(?:\\.[0-9]*\\)?\\|\\.[0-9]+\\)" text pos)
-                             (= (match-beginning 0) pos))
-                  (throw 'invalid nil))
-                (let ((number (match-string 0 text)))
-                  (setq pos (match-end 0)) (string-to-number number)))))
-         (product ()
-           (let ((value (factor)))
-             (while (memq (peek) '(?* ?/))
-               (let ((op (aref text pos)))
-                 (cl-incf pos)
-                 (let ((right (factor)))
-                   (setq value (cond ((= op ?*) (* value right))
-                                     ((zerop right) (setq division-by-zero t) 0)
-                                     (t (/ (float value) right)))))))
-             value))
-         (sum ()
-           (let ((value (product)))
-             (while (memq (peek) '(?+ ?-))
-               (let ((op (aref text pos)))
-                 (cl-incf pos)
-                 (let ((right (product)))
-                   (setq value (if (= op ?+) (+ value right) (- value right))))))
-             value)))
-      (catch 'invalid
-        (let ((value (sum)))
-          (space)
-          (when (= pos len)
-            (when division-by-zero (error "Division by zero"))
-            value))))))
-
 (defun launcher--calculator-query (input)
-  "Return a calculation candidate, including INVALID for unfinished INPUT.
-Invalid candidates retain the calculation identity and refuse execution."
+  "Return a candidate for a constant Calc expression in INPUT.
+An initial = forces calculation.  Failed simple arithmetic retains an
+INVALID candidate; other failed expressions leave normal search available.
+Bare decimal numbers and blank input do not trigger implicit calculation."
   (let* ((explicit (string-prefix-p "=" input))
          (expression (if explicit (substring input 1) input)))
-    (when (or explicit
-              (and (string-match-p "\\`[0-9.() +*/\t\n-]+\\'" expression)
-                   (string-match-p "[()+*/-]" expression)))
-      (let ((number (condition-case nil (launcher--arithmetic expression)
-                      (error nil))))
-        (if (null number)
-            (list (list :id 'calculation :title "= INVALID"
-                        :subtitle "Incomplete or invalid expression"
-                        :data nil))
-          (let ((value (if (integerp number) (number-to-string number)
-                         (format "%.12g" number))))
-            (list (list :id 'calculation :title (concat "= " value)
-                        :subtitle "Copy result"
-                        :data value))))))))
+    (unless (and (not explicit)
+                 (or (string-blank-p expression)
+                     (string-match-p
+                      "\\`[ \t\n]*\\(?:[0-9]+\\(?:\\.[0-9]*\\)?\\|\\.[0-9]+\\)[ \t\n]*\\'"
+                      expression)))
+      (let ((value (condition-case nil
+                       ;; This option is not among Calc's saved mode variables.
+                       (let ((calc-multiplication-has-precedence nil)
+                             (calc-eval-error nil))
+                         (calc-eval (list expression) 'num))
+                     (error nil))))
+        (cond
+         ((stringp value)
+          (setq value (string-remove-suffix "." value))
+          (list (list :id 'calculation :title (concat "= " value)
+                      :subtitle "Copy result" :data value)))
+         ((or explicit
+              (and (string-match-p "\\`[0-9.() +*/^%\t\n-]+\\'" expression)
+                   (string-match-p "[()+*/^%-]" expression)))
+          (list (list :id 'calculation :title "= INVALID"
+                      :subtitle "Incomplete or invalid expression"
+                      :data nil))))))))
 
 (defun launcher--calculator-submit (candidate)
   "Copy CANDIDATE's calculated value, refusing incomplete expressions."

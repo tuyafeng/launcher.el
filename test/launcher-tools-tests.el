@@ -889,23 +889,77 @@
 
 (ert-deftest launcher-tools-calculator-arithmetic-and-copy ()
   (dolist (case '(("1 + 2 * 3" . "7") ("(1+2)*3" . "9")
+                  ("(1+2" . "3") ("sqrt(9" . "3")
                   ("= .5 + 1.25" . "1.75") ("1 / 2" . "0.5")
+                  ("8/2*2" . "8") ("8*2/2" . "8") ("8/2/2" . "2")
+                  ("2^3^2" . "512") ("-2^2" . "-4") ("2^-3" . "0.125")
+                  ("10%3" . "1") ("-10%3" . "2") ("10%-3" . "-2")
+                  ("10%3*2" . "2") ("20%" . "0.2") ("200*10%" . "20")
+                  ("1e3+2" . "1002") ("2.5e-4*2" . "5e-4")
+                  ("1 2 + 3" . "5") ("2(3+4)" . "14")
+                  ("sqrt(9)" . "3") ("sqrt(2)" . "1.41421356237")
+                  ("sin(30)" . "0.5") ("5!" . "120") ("16#ff+1" . "256")
+                  ("1:3+1:6" . "1:2") ("[1,2]+[3,4]" . "[4, 6]")
+                  ("(1,2)+(3,4)" . "(4, 6)")
                   ("2 * -3" . "-6") ("= 42" . "42") ("= 0" . "0")))
     (let* ((kill-ring nil) (result (car (launcher--calculator-query (car case)))))
       (should result)
       (launcher--calculator-submit result)
       (should (equal (cdr case) (car kill-ring)))))
-  (dolist (input '("hello" "42" "" "d hello"))
+  (dolist (input '("hello" "42" " 42 " "0.5" ".5" "42." "" " \t\n"
+                  "d hello" "sqrt(" "[1," "foo+1" "(message 1)"))
     (should-not (launcher--calculator-query input))))
 
 (ert-deftest launcher-tools-calculator-invalid-keeps-input-and-copies-nothing ()
-  (dolist (input '("3-1.5-" "1 +" "(1+2" "(" "1 2 + 3" "1..2 + 3"
-                  "1 / 0" "1 / 0 +" "=" "= " "= (message 1)"))
+  (dolist (input '("3-1.5-" "1 +" "(" "1..2 + 3" "2^" "10%0"
+                  "1 / 0" "1 / 0 +" "=" "= " "= (message 1)"
+                  "=sqrt(" "=[1," "=foo+1"))
     (let* ((kill-ring '("previous"))
            (result (car (launcher--calculator-query input))))
       (should (equal "= INVALID" (plist-get result :title)))
       (should-error (launcher--calculator-submit result) :type 'user-error)
       (should (equal '("previous") kill-ring)))))
+
+(ert-deftest launcher-tools-calculator-does-not-evaluate-lisp ()
+  (let ((executed nil))
+    (cl-letf (((symbol-function 'launcher-calculator-test-side-effect)
+               (lambda (&rest _) (setq executed t))))
+      (should-not (launcher--calculator-query
+                   "(launcher-calculator-test-side-effect 1)"))
+      (should (equal "= INVALID"
+                     (plist-get
+                      (car (launcher--calculator-query
+                            "=(launcher-calculator-test-side-effect 1)"))
+                      :title)))
+      (should-not executed))))
+
+(ert-deftest launcher-tools-calculator-complex-failure-allows-search ()
+  (launcher-test--with-session nil nil
+    (dolist (input '("sqrt(" "[1," "foo+1"))
+      (launcher--query-update session input)
+      (should (eq 'fallback
+                  (plist-get (car (launcher--query-session-results session)) :id))))))
+
+(ert-deftest launcher-tools-calculator-default-modes-are-local ()
+  ;; Initialize the actual Calc buffer before overriding its user settings.
+  (calc-eval "0")
+  (with-current-buffer (get-buffer "*Calculator*")
+    (let ((calc-language 'c)
+          (calc-internal-prec 3)
+          (calc-angle-mode 'rad)
+          (calc-number-radix 16)
+          (calc-eval-error 'string)
+          (calc-multiplication-has-precedence t))
+      (dolist (case '(("8/2*2" . "8") ("2^3" . "8")
+                      ("sin(30)" . "0.5") ("sqrt(2)" . "1.41421356237")))
+        (should (equal (cdr case)
+                       (plist-get (car (launcher--calculator-query (car case))) :data))))
+      (should (equal "= INVALID"
+                     (plist-get (car (launcher--calculator-query "1/0")) :title)))
+      (should (equal (list calc-language calc-internal-prec calc-angle-mode
+                           calc-number-radix calc-eval-error
+                           calc-multiplication-has-precedence)
+                     '(c 3 rad 16 string t))))))
 
 (ert-deftest launcher-tools-calculator-editing-never-falls-back-to-search ()
   (launcher-test--with-session nil nil
