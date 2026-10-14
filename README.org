@@ -166,7 +166,8 @@ replaced with the URL-encoded query; ~%%~ inserts a literal percent sign.
 
 Install ~osx-dictionary~ and add the configuration below. Type ~d word~ to preview
 a definition, then press ~RET~ to see the full entry in another window. Press
-~q~ to close the result window.
+~q~ to close the result window. If no definition is found, show an error
+without offering a candidate.
 
 #+begin_src emacs-lisp
 (use-package osx-dictionary
@@ -182,6 +183,8 @@ a definition, then press ~RET~ to see the full entry in another window. Press
                (text (with-temp-buffer
                        (osx-dictionary--insert-search-result word)
                        (buffer-string))))
+          (when (string-blank-p text)
+            (user-error "No definition: %s" word))
           (list (list :id word :title word :data word
                       :subtitle
                       (truncate-string-to-width
