@@ -41,10 +41,7 @@
 
 ;;; The proposed launcher setup (macos.el's `use-package launcher' :config)
 
-(require 'launcher-osx-dictionary)
-(setq launcher-tools
-      '(("d" :name "Dictionary"
-              :query launcher-osx-dictionary-query :submit launcher-osx-dictionary-submit)))
+(setq launcher-tools nil)
 
 ;;; The proposed Portal command (tools.el's `use-package portal' :config)
 

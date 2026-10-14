@@ -25,15 +25,15 @@ view ownership, result navigation, and lifecycle. Read [shared decisions](README
 ;; Default launcher-tools is nil; this is an example, not a built-in binding.
 (setq launcher-tools
       '(("d" :name "Dictionary" :prompt "Word: "
-              :function launcher-osx-dictionary-lookup)))
+              :function my-dictionary-lookup)))
 ```
 
 Each entry has a nonempty prefix string with no whitespace, a display name,
 query prompt, and callable accepting one query string and returning a live buffer.
 Single letters are convenient but not hardcoded; multi-character prefixes such as `dict`
 work too. Document the Custom type and support named/autoloaded functions and
-lexical closures. The optional real dictionary handler is implemented in task 3;
-this task tests with credential-free fake handlers returning real Emacs buffers.
+lexical closures. This task tests with credential-free fake handlers returning
+real Emacs buffers.
 
 ## Interaction decisions
 
@@ -266,14 +266,13 @@ Not run, not covered, or limits:
 - No physical keys, IME or VoiceOver. Non-ASCII input was pasted, not typed.
 - No Portal-hosted run. A minibuffer-only host's inability to show results
   is documented, not exercised.
-- No real dictionary, gptel or network: task 3 supplies a real handler.
+- No real dictionary, gptel or network: checks use fake handlers.
 - Handlers run synchronously after the query closes. A slow one blocks
   Emacs, and C-g then quits the interaction. Until the result view appears,
   `launcher-buffer`'s window shows the closed, empty query.
 - A result mode's own `q` (`quit-window`) replaces the buffer in the
   launcher's window while the interaction continues, as for any user window
-  change since task 1. The dictionary adapter (task 3) handles its package's
-  `q`.
+  change since task 1.
 - In `launcher`, Escape keeps Emacs's minibuffer meaning (ESC ESC ESC); only
   C-g was checked there.
 - In batch, `launcher-buffer`'s query display is stubbed with the other

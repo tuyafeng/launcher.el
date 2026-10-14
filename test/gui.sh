@@ -2,8 +2,7 @@
 # GUI ONLY, in the test VM: bash test/vm.sh sh test/gui.sh [SELECTOR]
 # Runs the graphical checks of minibuffer completion, of tool routing and of
 # app icons in a disposable Emacs without Portal or a user init, typing
-# through AppKit's event queue.  The real Apple Dictionary checks are opt-in:
-# bash test/vm.sh sh test/gui.sh '^launcher-dictionary-real-'.
+# through AppKit's event queue.
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 emacs=${EMACS:-/Applications/Emacs.app/Contents/MacOS/Emacs}
@@ -23,6 +22,5 @@ mkdir -p "$LAUNCHER_TEST_SCREENSHOTS"
                                          (getenv "LAUNCHER_TEST_ROOT")))' \
     -l "$root/test/launcher-gui-tests.el" \
     -l "$root/test/launcher-tools-gui-tests.el" \
-    -l "$root/test/launcher-osx-dictionary-gui-tests.el" \
     -l "$root/test/launcher-icons-gui-tests.el" \
     --eval '(run-at-time 1 nil #'\''launcher-gui-run-and-exit)'

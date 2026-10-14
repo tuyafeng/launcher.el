@@ -24,9 +24,7 @@ The launcher must work in a normal Emacs window with Portal entirely absent.
    behavior with the existing minibuffer command.
 2. [Configurable tool routing](configurable-tool-routing.md) — `d SPC` enters raw
    query input; Enter calls a configured function and shows its returned buffer.
-3. [Apple Dictionary example](apple-dictionary-example.md) — optional adapter to
-   existing osx-dictionary.el, with `d` chosen in configuration, not hardcoded.
-4. [Configuration and end-to-end acceptance](configuration-and-acceptance.md) —
+3. [Configuration and end-to-end acceptance](configuration-and-acceptance.md) —
    reserved for a later agent, after implementation and Portal prerequisites.
 
 Independent enhancement (can run in parallel with the sequence above):
@@ -43,7 +41,7 @@ Portal's independent infrastructure tasks are at:
 
 Those paths are relative to this repository's root. Cross-repository prerequisites
 are explicit checklist gates in the final configuration task, not invalid local
-`depends_on` IDs. The first three launcher tasks do not depend on Portal.
+`depends_on` IDs. The first two launcher tasks do not depend on Portal.
 
 ## Shared design decisions
 
@@ -61,13 +59,12 @@ are explicit checklist gates in the final configuration task, not invalid local
   ```elisp
   (setq launcher-tools
         '(("d" :name "Dictionary"
-                :function launcher-osx-dictionary-lookup)))
+                :function my-dictionary-lookup)))
   ```
 
   A handler accepts one query string and returns a live result buffer. The
-  dictionary adapter has this interface; the underlying package's interactive
-  command does not. Tool handlers do not launch another prompt or decide where
-  their result appears. Unsupported return values fail visibly, never becoming
+  configured handler must implement this interface. Tool handlers do not launch
+  another prompt or decide where their result appears. Unsupported return values fail visibly, never becoming
   browser searches. Future handlers may return a buffer immediately and update it
   later; a general promise/stream protocol and actual LLM integration are out of
   scope for this first implementation.

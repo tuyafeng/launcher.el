@@ -383,74 +383,6 @@ A minibuffer-only host has no ordinary window for a result buffer;
 Emacs windows.  For a Portal panel, use
 ~(portal-launcher-present #'launcher :kind 'minibuffer)~.
 
-** Apple Dictionary
-
-~launcher-osx-dictionary.el~ provides ~launcher-osx-dictionary-query~ for
-previews and ~launcher-osx-dictionary-submit~ to display captured definitions in Apple's dictionaries with the
-[[https://github.com/xuchunyang/osx-dictionary.el][osx-dictionary]] package.  Launcher does not depend on that package, and
-registers no prefix for it; choose your own:
-
-#+begin_src emacs-lisp
-(use-package osx-dictionary :ensure t)
-(require 'launcher-osx-dictionary)
-(setq launcher-tools
-      '(("d" :name "Dictionary"
-              :query launcher-osx-dictionary-query :debounce 0.2
-              :submit launcher-osx-dictionary-submit)))
-#+end_src
-
-Then ~d hello~ previews a definition after 200 ms without input changes.
-Return on the dictionary candidate shows the captured definitions without
-looking them up a second time, rendered by osx-dictionary in
-its own mode, displayed by ~launcher~ through ~pop-to-buffer~.  The lookup
-itself opens nothing: no Dictionary.app, browser, second prompt, window or frame.
-
-- Surrounding whitespace is trimmed; otherwise the word is looked up as
-  typed, so phrases and non-ASCII words work.  osx-dictionary's choice of
-  dictionaries (~osx-dictionary-select-dictionary~,
-  ~osx-dictionary-allowed-dictionaries~) and search log apply.  Previews
-  leave the log untouched; selecting a definition logs the chosen word.
-- Results go to the buffer ~*Launcher Dictionary*~
-  (~launcher-osx-dictionary-buffer-name~), reused by each lookup: the
-  package's own ~*osx-dictionary*~ session is left alone.  A lookup that
-  fails leaves the previous result as it was.
-- The result uses the familiar dictionary keys, with launcher-specific
-  commands in this buffer only (~launcher-osx-dictionary-result-mode~):
-  ~q~ quits the window as ~quit-window~ and ~s~ reopens launcher with the
-  configured dictionary prefix (for example, ~d ~) ready for another word
-  and its preview, retaining the originating prefix when there are multiple
-  dictionary tools.  Canceling leaves the current result in place.  ~S~ chooses
-  the dictionaries, then looks the word up again in this buffer.  ~o~
-  opens Dictionary.app with the word or phrase encoded as a URL.  ~r~
-  reads aloud without blocking Emacs; pressing it again restarts speech.
-  Refreshing, quitting or killing the result stops its speech.  ~?~ shows
-  mode help as usual.
-  Results disable ~view-mode~ if user hooks enabled it, so its search
-  bindings do not shadow the dictionary keys; the buffer stays read-only.
-- The lookup is synchronous: Emacs waits for it, typically well under a
-  second, and quitting does not cancel it.
-- It needs macOS, osx-dictionary, and its native helper
-  ~osx-dictionary-cli~.  If the helper is missing, the first lookup builds
-  it into the package's directory, as the package itself would, which
-  needs Xcode's command line tools (~xcode-select --install~).  With preview
-  enabled, the first debounced query can build the helper.  For lookups only on Return, supply a lightweight ~:query~ that returns
-  the word in ~:data~, and a ~:submit~ wrapper calling
-  ~launcher-osx-dictionary-lookup~ with that word.
-- Failures keep the query and its text, and say what went wrong: another
-  platform, a missing package, an incompatible version, a missing helper
-  source, compiler or writable directory, a failed build or helper, no
-  installed dictionaries, a chosen dictionary that is not installed, or no
-  definition.  The helper reports no errors of its own, and finds nothing
-  both for an unknown word and for a failure while searching.  So only
-  when it finds nothing, the adapter checks the helper and the
-  dictionaries, by listing them.
-- Tested with osx-dictionary commit ~655bca5~ (2026-09-06).  The package has
-  no public way to look a word up without prompting and displaying, so
-  the adapter uses its private ~osx-dictionary--insert-search-result~,
-  ~osx-dictionary--current-dictionary-description~,
-  ~osx-dictionary--current-word~ and ~osx-dictionary--load-dir~, and
-  reports a version that lacks them.
-
 * Development
 
 Run the regression tests without Vertico, launching apps or opening a browser:
@@ -459,7 +391,6 @@ Run the regression tests without Vertico, launching apps or opening a browser:
 sh test/elpa.sh   # pinned packages, into .cache/elpa
 emacs --batch -Q -L . -L test -l test/launcher-tests.el \
   -l test/launcher-tools-tests.el -l test/launcher-candidates-tests.el \
-  -l test/launcher-osx-dictionary-tests.el \
   -l test/launcher-icons-tests.el -l test/launcher-icons-worker-tests.el \
   -f ert-run-tests-batch-and-exit
 #+end_src
@@ -470,11 +401,6 @@ with a fake process, so they need neither macOS nor a display.
 and on fake bundles in temporary directories, on macOS only, and skips
 elsewhere.
 
-The dictionary checks use the pinned osx-dictionary that ~test/elpa.sh~
-fetches, and skip without it.  A fake helper script stands in for its
-native one, so they need neither macOS nor dictionaries, and prove no real
-lookup.
-
 Vertico's display needs a graphical Emacs.  ~bash test/vm.sh~ runs the
 graphical checks (~test/gui.sh~, which loads ~test/launcher-gui-tests.el~,
 ~test/launcher-tools-gui-tests.el~ and ~test/launcher-icons-gui-tests.el~) in a disposable Emacs in the macOS test VM
@@ -482,11 +408,6 @@ that Portal's ~test/vm.sh~ uses, without Portal, typing through AppKit's
 event queue.  It fetches pinned Vertico, Orderless and Marginalia releases
 with ~test/elpa.sh~ into ~.cache/elpa~, and copies logs and screenshots back
 to ~.cache/vm/~.  Never run these checks in your own Emacs session.
-
-Real lookups in Apple's dictionaries are opt-in, also in the VM:
-~bash test/vm.sh sh test/gui.sh '^launcher-dictionary-real-'~ builds the
-pinned osx-dictionary's helper in a temporary copy, looks words up through
-~launcher~, and logs the environment and definitions.
 
 * Works with [[https://github.com/xiaoxinghu/m-x][M-x.app]]
 

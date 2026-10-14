@@ -392,15 +392,17 @@ replaced by the design below.
 ### Verification
 
 Host: macOS 27.0.1 (26A434), Emacs 31.1 (Homebrew CLI, batch).
+The commands below omit the removed native lookup integration; the reported
+test count describes the original historical run.
 
 ```sh
 sh test/elpa.sh
 emacs --batch -Q -L . -L test -l test/launcher-tests.el -l test/launcher-buffer-tests.el \
-  -l test/launcher-tools-tests.el -l test/launcher-osx-dictionary-tests.el \
+  -l test/launcher-tools-tests.el \
   -l test/launcher-icons-tests.el -l test/launcher-icons-worker-tests.el \
   -f ert-run-tests-batch-and-exit        # 80 tests, 80 as expected
 emacs --batch -Q -L . -f batch-byte-compile launcher-icons.el launcher.el \
-  launcher-buffer.el launcher-osx-dictionary.el   # no warnings
+  launcher-buffer.el   # no warnings
 git diff --check                          # clean
 ```
 
