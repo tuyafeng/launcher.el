@@ -143,15 +143,38 @@
         (should-not (launcher--entries refresh))
         (should (= calls 1))))))
 
-(ert-deftest launcher-app-entries-sort-and-disambiguate-names ()
+(ert-deftest launcher-app-entries-sort-and-preserve-plain-names ()
   (let ((paths '("/Applications/Notes.app" "/Applications/Calculator.app/"
                  "/System/Applications/Notes.app")))
     (should (equal (launcher--build-entries paths)
                    '(("Calculator" . "/Applications/Calculator.app/")
-                     ("Notes  (/Applications/Notes.app)" . "/Applications/Notes.app")
-                     ("Notes  (/System/Applications/Notes.app)" . "/System/Applications/Notes.app"))))
+                     ("Notes" . "/Applications/Notes.app")
+                     ("Notes" . "/System/Applications/Notes.app"))))
     (should (equal paths '("/Applications/Notes.app" "/Applications/Calculator.app/"
                           "/System/Applications/Notes.app")))))
+
+(ert-deftest launcher-same-name-apps-use-path-subtitles-and-launch-distinctly ()
+  (let* ((paths '("/Applications/Notes.app" "/System/Applications/Notes.app"))
+         (launcher-show-icons nil)
+         launched)
+    (launcher-test--with-session (launcher--build-entries paths) nil
+      (launcher--query-update session "notes")
+      (let ((results (launcher--query-session-results session)))
+        (should (equal (mapcar (lambda (result) (plist-get result :title)) results)
+                       '("Notes" "Notes")))
+        (should (equal (mapcar (lambda (result) (plist-get result :id)) results)
+                       paths))
+        (should (equal (mapcar (lambda (result) (plist-get result :subtitle)) results)
+                       paths))
+        (should-not (equal (plist-get (car results) :candidate)
+                           (plist-get (cadr results) :candidate)))
+        (cl-letf (((symbol-function 'launcher--launch)
+                   (lambda (path) (push path launched))))
+          (dolist (result results)
+            (should (eq result (launcher--result-for-candidate
+                               (substring-no-properties (plist-get result :candidate)))))
+            (launcher--result-execute result)))
+        (should (equal (nreverse launched) paths))))))
 
 (ert-deftest launcher-reader-quit-and-error-clean-up ()
   (dolist (condition '(quit error))

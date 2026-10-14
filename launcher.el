@@ -184,15 +184,9 @@ Return unique absolute paths without resolving symlinks."
 
 (defun launcher--build-entries (paths)
   "Convert PATHS to an alist of (display-name . app-path)."
-  (let ((counts (make-hash-table :test #'equal))
-        entries)
-    (dolist (path paths)
-      (let ((name (file-name-base (directory-file-name path))))
-        (puthash name (1+ (gethash name counts 0)) counts)
-        (push (cons name path) entries)))
-    (dolist (entry entries)
-      (when (> (gethash (car entry) counts) 1)
-        (setcar entry (format "%s  (%s)" (car entry) (abbreviate-file-name (cdr entry))))))
+  (let ((entries (mapcar (lambda (path)
+                           (cons (file-name-base (directory-file-name path)) path))
+                         paths)))
     (sort entries (lambda (a b) (string-lessp (car a) (car b))))))
 
 (defun launcher-refresh ()
