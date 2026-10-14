@@ -465,10 +465,14 @@ Only display copies are shortened; completion identities remain intact."
                                (get-text-property 0 'display candidate) candidate))
                     (prefix (if icons
                                 (launcher-icons-prefix (plist-get result :icon)) ""))
-                    (prefix-width (launcher--display-width prefix pixels)))
-               (setq column (max column (+ prefix-width
-                                           (launcher--display-width title pixels) gap)))
-               (list candidate prefix title prefix-width (plist-get result :subtitle))))
+                    (prefix-width (launcher--display-width prefix pixels))
+                    (subtitle (plist-get result :subtitle)))
+               (when (and subtitle (string-blank-p subtitle))
+                 (setq subtitle nil))
+               (when subtitle
+                 (setq column (max column (+ prefix-width
+                                             (launcher--display-width title pixels) gap))))
+               (list candidate prefix title prefix-width subtitle)))
            candidates)))
     (setq column (* step (ceiling column step)))
     (setq column
@@ -485,7 +489,9 @@ Only display copies are shortened; completion identities remain intact."
      (lambda (row)
        (pcase-let* ((`(,candidate ,prefix ,title ,prefix-width ,subtitle) row)
                     (visible (launcher--display-truncate
-                              title (- column gap prefix-width) pixels))
+                              title (if subtitle
+                                        (- column gap prefix-width)
+                                      (- width prefix-width space)) pixels))
                     (copy (if (equal visible title) candidate
                             (propertize candidate 'display visible 'help-echo title)))
                     (annotation (launcher--display-truncate
