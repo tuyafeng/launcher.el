@@ -198,6 +198,39 @@ the selected row included, without changing what is launched."
                  'quit))
         (vertico-mode -1)))))
 
+(ert-deftest launcher-gui-icons-follow-buffer-font ()
+  "Mixed prefixes follow remapped fonts and ignore extra line spacing."
+  (launcher-gui-icons--with
+    (save-window-excursion
+      (with-temp-buffer
+        (switch-to-buffer (current-buffer))
+        (let ((icon (launcher-icons-app (cdar apps)))
+              (text (propertize "T" 'face '(:foreground "red")))
+              heights)
+          (dolist (scale '(-2 0 2))
+            (text-scale-set scale)
+            (let ((size (default-font-height)))
+              (push size heights)
+              (dolist (spacing '(nil 8))
+                (setq-local line-spacing spacing)
+                (erase-buffer)
+                (let ((prefixes (mapcar #'launcher-icons-prefix (list icon text nil))))
+                  (let ((image (get-text-property 0 'display (car prefixes))))
+                    (should (eq (car image) 'image))
+                    (should (= (plist-get (cdr image) :width) size))
+                    (should (= (plist-get (cdr image) :height) size)))
+                  (let ((widths (mapcar #'string-pixel-width prefixes)))
+                    (should (<= (- (apply #'max widths) (apply #'min widths)) 1)))
+                  (dolist (prefix prefixes)
+                    (insert prefix "Candidate\n")))
+                (goto-char (point-min))
+                (redisplay t)
+                (let ((rows (seq-take (launcher-gui-icons--line-heights (selected-window)) 3)))
+                  (should (= (length rows) 3))
+                  (should (= (length (delete-dups rows)) 1))))))
+          ;; The same buffer produces larger and smaller icons after remapping.
+          (should (apply #'> heights)))))))
+
 (ert-deftest launcher-gui-icons-stock-completion ()
   "Stock completion's *Completions* shows the icons too."
   (launcher-gui-icons--with

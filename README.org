@@ -99,9 +99,10 @@ before its name, as macOS draws it.  In a terminal, or with
   typing: an app whose icon is not ready yet shows blank space as large,
   and its icon appears when the list is next redrawn.  Drawing 500 apps'
   icons takes a few seconds, once.
-- ~launcher-icon-size~ (default 20) is the list's icon size in logical
-  pixels; icons stay sharp up to 32 on a Retina display.  Rows of apps and
-  of tools are as tall as the icon or the line, whichever is taller.
+- Image icons and blank slots follow the current buffer's default font
+  height, including font remapping but excluding extra line spacing.
+  There is no separate icon size setting.  Cached icons stay sharp up to
+  32 logical pixels on a Retina display.
 - Icons are cached as 64-pixel PNGs in the ~v1~ subdirectory of
   ~launcher-icon-cache-directory~ (~cache/launcher/icons/~ in your Emacs
   directory), and survive restarts.
@@ -259,9 +260,9 @@ tools participate.  Only selecting a result calls ~:submit~.
   same icon formats below.
   ~:icon~ accepts a string (including text properties, as returned by
   nerd-icons), ~(:file PNG-PATH)~, ~(:builtin KEY)~, or nil.
-  PNGs use ~launcher-icon-size~;
+  PNGs are square, sized to the current buffer's default font height;
   text icons keep their font and color properties and are centered in a slot
-  at least ~launcher-icon-size~ pixels wide.  Empty strings use the same blank
+  at least that many pixels wide.  Empty strings use the same blank
   slot as nil.  Text wider than the slot keeps its original size.  All icons follow
   ~launcher-show-icons~ and the existing graphical display requirements.
   Missing or unusable images show blank space without blocking actions.
