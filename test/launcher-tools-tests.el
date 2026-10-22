@@ -995,9 +995,14 @@
                   ("sin(30)" . "0.5") ("5!" . "120") ("16#ff+1" . "256")
                   ("1:3+1:6" . "1:2") ("[1,2]+[3,4]" . "[4, 6]")
                   ("(1,2)+(3,4)" . "(4, 6)")
-                  ("2 * -3" . "-6") ("= 42" . "42") ("= 0" . "0")))
+                  ("2 * -3" . "-6") ("= 42" . "42") ("= 0" . "0")
+                  ("1+1=" . "2") ("1+1 = " . "2")
+                  (" \t1+1 \t= \t\n" . "2")
+                  ("42=" . "42") ("0=" . "0") (".5=" . "0.5")
+                  ("sqrt(9)=" . "3") ("=1+1=" . "2")
+                  ("= 42 = " . "42")))
     (let* ((kill-ring nil) (result (car (launcher--calculator-query (car case)))))
-      (should result)
+      (should (equal (concat "= " (cdr case)) (plist-get result :title)))
       (launcher--calculator-submit result)
       (should (equal (cdr case) (car kill-ring)))))
   (dolist (input '("hello" "42" " 42 " "0.5" ".5" "42." "" " \t\n"
@@ -1007,7 +1012,9 @@
 (ert-deftest launcher-tools-calculator-invalid-keeps-input-and-copies-nothing ()
   (dolist (input '("3-1.5-" "1 +" "(" "1..2 + 3" "2^" "10%0"
                   "1 / 0" "1 / 0 +" "=" "= " "= (message 1)"
-                  "=sqrt(" "=[1," "=foo+1"))
+                  "=sqrt(" "=[1," "=foo+1"
+                  " = " "==" "1+=" "1/0=" "sqrt(=" "foo+1="
+                  "1+1==" "1+1= ="))
     (let* ((kill-ring '("previous"))
            (result (car (launcher--calculator-query input))))
       (should (equal "= INVALID" (plist-get result :title)))
@@ -1059,7 +1066,9 @@
   (launcher-test--with-session nil nil
     (let (candidate)
       (dolist (case '(("3-1.5" . "= 1.5") ("3-1.5-" . "= INVALID")
-                      ("3-1.5-1" . "= 0.5")))
+                      ("3-1.5-1" . "= 0.5") ("3-1.5-1=" . "= 0.5")
+                      ("1+=" . "= INVALID") ("1/0=" . "= INVALID")
+                      ("sqrt(=" . "= INVALID")))
         (launcher--query-update session (car case))
         (let* ((results (launcher--query-session-results session))
                (result (car results)))

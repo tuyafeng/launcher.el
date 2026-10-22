@@ -45,8 +45,8 @@ Blank input shows no results. With Vertico, ~TAB~ inserts the selected title or
 tool prefix. With Emacs's default completion UI, it shows the available choices.
 
 - ~emacs~ finds applications using your completion styles.
-- ~1 + 2 * 3~ previews ~7~; ~RET~ copies the value. Calc syntax such as
-  ~sqrt(9)~ and ~2^3~ works too. Prefix a number with ~=~ to calculate it: ~= 42~.
+- ~1+1~ or ~1+1=~ previews ~2~; ~RET~ copies the result.
+  Calc expressions such as ~sqrt(9)~ and ~2^3~ work too.
 - ~g emacs~ searches Google. Selecting the ~g~ entry inserts ~g ~ first.
 - ~https://example.org~ offers to open the URL if no tool matches.
 - Any other input with no matches offers a web search.

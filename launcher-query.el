@@ -124,11 +124,15 @@ Keep source order and all candidates sharing a matching title."
 
 (defun launcher--calculator-query (input)
   "Return a candidate for a constant Calc expression in INPUT.
-An initial = forces calculation.  Failed simple arithmetic retains an
-INVALID candidate; other failed expressions leave normal search available.
+An initial or trailing = forces calculation; whitespace around a trailing
+= is ignored.  Failed simple arithmetic retains an INVALID candidate;
+other failed expressions leave normal search available.
 Bare decimal numbers and blank input do not trigger implicit calculation."
-  (let* ((explicit (string-prefix-p "=" input))
-         (expression (if explicit (substring input 1) input)))
+  (let* ((prefix (string-prefix-p "=" input))
+         (body (string-trim-right (if prefix (substring input 1) input)))
+         (suffix (string-suffix-p "=" body))
+         (explicit (or prefix suffix))
+         (expression (if suffix (substring body 0 -1) body)))
     (unless (and (not explicit)
                  (or (string-blank-p expression)
                      (string-match-p
